@@ -24,6 +24,7 @@ import android.webkit.WebViewClient;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
@@ -517,6 +518,84 @@ public class MainActivity extends AppCompatActivity {
         try { nativeResetContext(); } catch (Throwable ignored) {}
     }
 
+    /* ============================================================
+       In-app update: download APK → prompt install
+       ============================================================ */
+
+    @JavascriptInterface
+    public void downloadAndInstallApk(String url, String versionTag) {
+        if (url == null || url.isEmpty()) {
+            eval("window.__xenonApkError && window.__xenonApkError('no url');");
+            return;
+        }
+        new Thread(() -> doDownloadApk(url, versionTag)).start();
+    }
+
+    private void doDownloadApk(String url, String versionTag) {
+        try {
+            /* Prepare an updates directory under filesDir */
+            File dir = new File(getFilesDir(), "updates");
+            if (!dir.exists() && !dir.mkdirs()) {
+                eval("window.__xenonApkError && window.__xenonApkError('mkdir failed');");
+                return;
+            }
+            String safeTag = (versionTag == null || versionTag.isEmpty())
+                ? "latest" : versionTag.replaceAll("[^a-zA-Z0-9._-]", "_");
+            File out = new File(dir, "xenonlabs-" + safeTag + ".apk");
+
+            /* Stream download */
+            java.net.HttpURLConnection c =
+                (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            c.setInstanceFollowRedirects(true);
+            c.connect();
+            if (c.getResponseCode() != 200) {
+                eval("window.__xenonApkError && window.__xenonApkError('HTTP " + c.getResponseCode() + "');");
+                return;
+            }
+            long total = c.getContentLengthLong();
+            long done = 0;
+            byte[] buf = new byte[1 << 16];
+            try (java.io.InputStream in = c.getInputStream();
+                 java.io.FileOutputStream os = new java.io.FileOutputStream(out)) {
+                int n; long last = 0;
+                while ((n = in.read(buf)) > 0) {
+                    os.write(buf, 0, n);
+                    done += n;
+                    long now = System.currentTimeMillis();
+                    if (now - last > 300) {
+                        last = now;
+                        int pct = total > 0 ? (int)(done * 100 / total) : -1;
+                        long mbD = done / 1048576;
+                        long mbT = total > 0 ? total / 1048576 : 0;
+                        String msg = pct >= 0
+                            ? ("Downloading update " + mbD + " / " + mbT + " MB · " + pct + "%")
+                            : ("Downloading update " + mbD + " MB");
+                        eval("window.__xenonApkProgress && window.__xenonApkProgress("
+                             + JSONObject.quote(msg) + ");");
+                    }
+                }
+            }
+
+            eval("window.__xenonApkProgress && window.__xenonApkProgress('Preparing install…');");
+
+            /* Hand the APK to the system installer */
+            Uri apkUri = FileProvider.getUriForFile(
+                this, getPackageName() + ".fileprovider", out);
+
+            Intent install = new Intent(Intent.ACTION_VIEW);
+            install.setDataAndType(apkUri,
+                "application/vnd.android.package-archive");
+            install.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(install);
+
+            eval("window.__xenonApkDone && window.__xenonApkDone();");
+        } catch (Throwable t) {
+            eval("window.__xenonApkError && window.__xenonApkError("
+                 + JSONObject.quote(String.valueOf(t.getMessage())) + ");");
+        }
+    }
+
     public class Bridge {
         @JavascriptInterface public int    loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void   shutdown()                                 { MainActivity.this.shutdown(); }
@@ -543,6 +622,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void   cancelGeneration()                        { MainActivity.this.cancelGeneration(); }
         @JavascriptInterface public void   continueContext()                         { MainActivity.this.continueContext(); }
         @JavascriptInterface public void   resetContext()                            { MainActivity.this.resetContext(); }
+        @JavascriptInterface public void   downloadAndInstallApk(String u, String v)  { MainActivity.this.downloadAndInstallApk(u, v); }
         @JavascriptInterface public void   saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
     }
 }

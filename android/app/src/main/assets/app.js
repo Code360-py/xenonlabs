@@ -1159,7 +1159,18 @@
             '<button type="button" class="xl-update-open"><i class="fa-solid fa-download"></i> Download</button>' +
             '<button type="button" class="xl-update-close" aria-label="Dismiss"><i class="fa-solid fa-xmark"></i></button>';
         banner.querySelector('.xl-update-open').onclick = () => {
-            try { window.location.href = apk.browser_download_url; } catch (_) { toast('Cannot open download'); }
+            try {
+                if (window.Xenon && window.Xenon.downloadAndInstallApk) {
+                    window.Xenon.downloadAndInstallApk(
+                        apk.browser_download_url,
+                        remote);
+                    toast('Downloading update…', 'fa-solid fa-download');
+                } else {
+                    window.location.href = apk.browser_download_url;
+                }
+            } catch (e) {
+                toast('Cannot start update: ' + e.message, 'fa-solid fa-triangle-exclamation');
+            }
         };
         banner.querySelector('.xl-update-close').onclick = () => {
             store.setItem(DISMISS_KEY, APP_VERSION);
@@ -1207,6 +1218,19 @@
             if (box) box.hidden = true;
             toast('Cannot open file picker');
         }
+    };
+
+    /* ---------- APK download progress (from Java) ---------- */
+    window.__xenonApkProgress = msg => {
+        toast(msg, 'fa-solid fa-download');
+    };
+    window.__xenonApkDone = () => {
+        toast('Install prompt opened', 'fa-solid fa-circle-check');
+        const banner = document.getElementById('xlUpdateBanner');
+        if (banner) banner.remove();
+    };
+    window.__xenonApkError = msg => {
+        toast('Update failed: ' + msg, 'fa-solid fa-triangle-exclamation');
     };
 
     /* ---------- boot ---------- */

@@ -1,4 +1,4 @@
-/* XenonLabs UI logic — with ChatGPT-style history */
+/* XenonLabs UI — Batch 1: Markdown, copy, professional prompts */
 (function () {
     'use strict';
 
@@ -14,12 +14,83 @@
         }
     })();
 
+    const $  = s => document.querySelector(s);
+    const $$ = s => document.querySelectorAll(s);
+
     function escapeHtml(s) {
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    const $  = s => document.querySelector(s);
-    const $$ = s => document.querySelectorAll(s);
+    const hasMarked = typeof window.marked !== 'undefined';
+    const hasHljs   = typeof window.hljs   !== 'undefined';
+    if (hasMarked) {
+        try { window.marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false }); } catch (_) {}
+    }
+    function mdEnabled() { return store.getItem('xenon.md') !== '0'; }
+
+    function renderMarkdownInto(el, text) {
+        if (!hasMarked) { el.textContent = text; return; }
+        try { el.innerHTML = window.marked.parse(text); }
+        catch (_) { el.textContent = text; return; }
+        el.querySelectorAll('pre code').forEach(block => {
+            if (!block.dataset.hl) {
+                try { if (hasHljs) window.hljs.highlightElement(block); } catch (_) {}
+                block.dataset.hl = '1';
+            }
+            const pre = block.parentElement;
+            if (pre && !pre.querySelector('.code-copy')) {
+                const btn = document.createElement('button');
+                btn.className = 'code-copy';
+                btn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    copyText(block.textContent);
+                    btn.classList.add('copied');
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    toast('Code copied');
+                    setTimeout(() => {
+                        btn.classList.remove('copied');
+                        btn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+                    }, 1200);
+                };
+                pre.appendChild(btn);
+            }
+        });
+    }
+
+    function copyText(t) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(t);
+                return;
+            }
+        } catch (_) {}
+        const ta = document.createElement('textarea');
+        ta.value = t;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
+    }
+
+    let toastTimer = null;
+    function toast(msg, icon) {
+        let el = document.getElementById('xlToast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'xlToast';
+            el.className = 'xl-toast';
+            document.body.appendChild(el);
+        }
+        el.innerHTML = '<i class="' + (icon || 'fa-solid fa-circle-check') + '"></i>' +
+                       '<span>' + escapeHtml(msg) + '</span>';
+        requestAnimationFrame(() => el.classList.add('show'));
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+    }
+    window.__xenonToast = toast;
 
     function showError(msg) {
         const box = document.createElement('div');
@@ -29,29 +100,20 @@
     }
     window.addEventListener('error', e => showError('JS: ' + e.message));
 
-    /* -------- conversations -------- */
-    const CONV_KEY   = 'xenon.convs';
-    const ACTIVE_KEY = 'xenon.activeConv';
-
-    function loadConvs() {
-        try { return JSON.parse(store.getItem(CONV_KEY) || '[]'); }
-        catch (_) { return []; }
-    }
-    function saveConvs(list) { try { store.setItem(CONV_KEY, JSON.stringify(list)); } catch (_) {} }
+    /* conversations */
+    const CONV_KEY = 'xenon.convs', ACTIVE_KEY = 'xenon.activeConv';
+    function loadConvs() { try { return JSON.parse(store.getItem(CONV_KEY) || '[]'); } catch (_) { return []; } }
+    function saveConvs(l) { try { store.setItem(CONV_KEY, JSON.stringify(l)); } catch (_) {} }
 
     let convs = loadConvs();
     let activeId = store.getItem(ACTIVE_KEY) || null;
 
     function findConv(id) { return convs.find(c => c.id === id); }
     function newConversation() {
-        const c = {
-            id: 'c_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
-            title: 'New chat', created: Date.now(), updated: Date.now(), messages: [],
-        };
-        convs.unshift(c);
-        activeId = c.id;
-        store.setItem(ACTIVE_KEY, activeId);
-        saveConvs(convs);
+        const c = { id: 'c_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
+                    title: 'New chat', created: Date.now(), updated: Date.now(), messages: [] };
+        convs.unshift(c); activeId = c.id;
+        store.setItem(ACTIVE_KEY, activeId); saveConvs(convs);
         return c;
     }
     function currentConversation() {
@@ -68,47 +130,36 @@
     }
     function persistActive() {
         const c = findConv(activeId); if (!c) return;
-        c.updated = Date.now();
-        saveConvs(convs);
-        renderHistory();
+        c.updated = Date.now(); saveConvs(convs); renderHistory();
     }
     function deleteConversation(id) {
         convs = convs.filter(c => c.id !== id);
         if (activeId === id) activeId = convs[0] ? convs[0].id : null;
-        store.setItem(ACTIVE_KEY, activeId || '');
-        saveConvs(convs);
+        store.setItem(ACTIVE_KEY, activeId || ''); saveConvs(convs);
         renderHistory();
     }
     function relativeTime(ts) {
         const s = (Date.now() - ts) / 1000;
-        if (s < 60)    return 'now';
-        if (s < 3600)  return Math.floor(s / 60) + 'm';
+        if (s < 60) return 'now';
+        if (s < 3600) return Math.floor(s / 60) + 'm';
         if (s < 86400) return Math.floor(s / 3600) + 'h';
         const d = Math.floor(s / 86400);
-        if (d < 7)     return d + 'd';
-        return Math.floor(d / 7) + 'w';
+        return d < 7 ? d + 'd' : Math.floor(d / 7) + 'w';
     }
     function renderHistory() {
         const list = $('#historyList'); if (!list) return;
-        if (!convs.length) {
-            list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>';
-            return;
-        }
+        if (!convs.length) { list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>'; return; }
         const sorted = convs.slice().sort((a, b) => b.updated - a.updated);
         list.innerHTML = '';
         for (const c of sorted) {
             const el = document.createElement('div');
             el.className = 'xl-history-item' + (c.id === activeId ? ' active' : '');
-            el.dataset.id = c.id;
             el.innerHTML =
                 '<i class="fa-regular fa-message lead"></i>' +
                 '<span class="xl-history-title">' + escapeHtml(c.title || 'New chat') + '</span>' +
                 '<span class="xl-history-time">' + relativeTime(c.updated) + '</span>' +
-                '<button class="del" aria-label="Delete"><i class="fa-solid fa-xmark"></i></button>';
-            el.addEventListener('click', ev => {
-                if (ev.target.closest('.del')) return;
-                switchToConversation(c.id);
-            });
+                '<button class="del"><i class="fa-solid fa-xmark"></i></button>';
+            el.addEventListener('click', ev => { if (!ev.target.closest('.del')) switchToConversation(c.id); });
             el.querySelector('.del').addEventListener('click', ev => {
                 ev.stopPropagation();
                 if (confirm('Delete "' + (c.title || 'New chat') + '"?')) deleteConversation(c.id);
@@ -118,21 +169,16 @@
     }
     function switchToConversation(id) {
         if (activeId === id) { closeSidebar(); return; }
-        activeId = id;
-        store.setItem(ACTIVE_KEY, activeId);
-        renderChat();
-        renderHistory();
-        closeSidebar();
+        activeId = id; store.setItem(ACTIVE_KEY, activeId);
+        renderChat(); renderHistory(); closeSidebar();
     }
 
-    /* -------- tabs -------- */
     function activateTab(name) {
         $$('.xl-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
         $$('.xl-view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     }
     $$('.xl-tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
-    /* -------- sidebar -------- */
     const sidebar = $('#sidebar');
     const scrim   = $('#sidebarScrim');
     function openSidebar()  { if (scrim) scrim.hidden = false; if (sidebar) sidebar.hidden = false; renderHistory(); }
@@ -151,7 +197,6 @@
     const headerNew = $('#newChatBtn');
     if (headerNew) headerNew.onclick = () => { newConversation(); renderChat(); renderHistory(); };
 
-    /* -------- island -------- */
     const island = $('#island');
     const islandText = $('#islandText');
     const islandStat = $('#islandStatus');
@@ -164,7 +209,6 @@
         island.classList.toggle('expanded', Boolean(status));
     }
 
-    /* -------- streaming -------- */
     let nextId = 1;
     const streams = new Map();
     window.__xenonToken = (id, piece) => { const s = streams.get(id); if (s) s.onToken(piece); };
@@ -179,11 +223,9 @@
         if (bar) bar.style.width = pct + '%';
         const mb  = (done / 1048576).toFixed(1);
         const tot = (total / 1048576).toFixed(1);
-        if (meta) {
-            meta.innerHTML = finished
-                ? '<i class="fa-solid fa-check"></i> Installed'
-                : '<i class="fa-solid fa-cloud-arrow-down"></i> ' + mb + ' / ' + tot + ' MB · ' + pct + '%';
-        }
+        if (meta) meta.innerHTML = finished
+            ? '<i class="fa-solid fa-check"></i> Installed'
+            : '<i class="fa-solid fa-cloud-arrow-down"></i> ' + mb + ' / ' + tot + ' MB · ' + pct + '%';
         if (finished) setTimeout(loadModels, 200);
     };
     window.__xenonDownloadError = (id, msg) => {
@@ -191,11 +233,49 @@
         if (el) el.querySelector('.meta').textContent = 'Failed: ' + msg;
     };
 
-    /* -------- chat -------- */
     const messages = $('#messages');
     const promptEl = $('#prompt');
     const sendBtn  = $('#send');
     let generating = false;
+
+    function makeAssistantBubble(text) {
+        const el = document.createElement('div');
+        el.className = 'xl-bubble assistant';
+        el.dataset.raw = text || '';
+
+        const actions = document.createElement('div');
+        actions.className = 'bubble-actions';
+        const copy = document.createElement('button');
+        copy.className = 'bubble-action-btn';
+        copy.innerHTML = '<i class="fa-regular fa-copy"></i>';
+        copy.title = 'Copy';
+        copy.onclick = (e) => {
+            e.stopPropagation();
+            copyText(el.dataset.raw || el.textContent);
+            copy.classList.add('copied');
+            copy.innerHTML = '<i class="fa-solid fa-check"></i>';
+            toast('Reply copied');
+            setTimeout(() => {
+                copy.classList.remove('copied');
+                copy.innerHTML = '<i class="fa-regular fa-copy"></i>';
+            }, 1200);
+        };
+        actions.appendChild(copy);
+        el.appendChild(actions);
+
+        if (text) {
+            if (mdEnabled()) renderMarkdownInto(el, text);
+            else el.appendChild(document.createTextNode(text));
+        }
+        return el;
+    }
+
+    function makeUserBubble(text) {
+        const el = document.createElement('div');
+        el.className = 'xl-bubble user';
+        el.textContent = text;
+        return el;
+    }
 
     function showEmptyState(title, sub, icon) {
         if (!messages) return;
@@ -224,10 +304,8 @@
         }
         messages.innerHTML = '';
         for (const m of c.messages) {
-            const el = document.createElement('div');
-            el.className = 'xl-bubble ' + (m.role === 'user' ? 'user' : 'assistant');
-            el.textContent = m.text;
-            messages.appendChild(el);
+            if (m.role === 'user') messages.appendChild(makeUserBubble(m.text));
+            else messages.appendChild(makeAssistantBubble(m.text));
         }
         scrollBottom();
     }
@@ -260,23 +338,13 @@
         });
     }
 
-    const composer = $('#composer');
-    if (composer) composer.addEventListener('submit', e => {
-        e.preventDefault();
+    function sendPrompt(text) {
         if (generating) return;
-        const text = promptEl.value.trim();
-        if (!text) return;
-
-        promptEl.value = '';
-        promptEl.style.height = 'auto';
+        promptEl.value = ''; promptEl.style.height = 'auto';
         if (sendBtn) sendBtn.disabled = true;
 
         const empt = messages.querySelector('.xl-empty'); if (empt) empt.remove();
-
-        const userEl = document.createElement('div');
-        userEl.className = 'xl-bubble user';
-        userEl.textContent = text;
-        messages.appendChild(userEl);
+        messages.appendChild(makeUserBubble(text));
         scrollBottom();
 
         appendMessage('user', text);
@@ -303,13 +371,29 @@
         streams.set(id, {
             onToken: piece => {
                 acc += piece; tokens++;
-                asstEl.textContent = acc;
+                asstEl.dataset.raw = acc;
+                if (mdEnabled()) {
+                    /* throttle: render at most once per frame */
+                    if (!asstEl._pending) {
+                        asstEl._pending = true;
+                        requestAnimationFrame(() => {
+                            asstEl._pending = false;
+                            renderMarkdownInto(asstEl, acc);
+                        });
+                    }
+                } else {
+                    asstEl.textContent = acc;
+                }
                 scrollBottom();
                 setIsland('generating', 'Generating…', tokens + ' tok');
             },
             onDone: () => {
                 asstEl.classList.remove('typing');
                 if (!acc) asstEl.textContent = '[no output]';
+                else {
+                    asstEl.dataset.raw = acc;
+                    if (mdEnabled()) renderMarkdownInto(asstEl, acc);
+                }
                 appendMessage('assistant', acc || '[no output]');
                 persistActive();
                 generating = false;
@@ -333,36 +417,36 @@
             showError('generateStream: ' + err);
             streams.get(id).onError(String(err));
         }
+    }
+
+    const composer = $('#composer');
+    if (composer) composer.addEventListener('submit', e => {
+        e.preventDefault();
+        const text = promptEl.value.trim();
+        if (!text) return;
+        sendPrompt(text);
     });
 
-    /* -------- models -------- */
     async function loadModels() {
         const list = $('#modelList'); if (!list) return;
         let models;
         try { models = JSON.parse(window.Xenon.listModels()); }
         catch (_) { models = []; }
-
         list.innerHTML = '';
         if (!models.length) {
-            list.innerHTML = '<div class="xl-empty">' +
-                '<div class="xl-empty-icon"><i class="fa-solid fa-cube"></i></div>' +
-                '<div class="xl-empty-title">No models</div></div>';
+            list.innerHTML = '<div class="xl-empty"><div class="xl-empty-icon"><i class="fa-solid fa-cube"></i></div><div class="xl-empty-title">No models</div></div>';
             return;
         }
-
         for (const m of models) {
             const el = document.createElement('div');
             el.className = 'xl-model' + (m.active ? ' active' : '');
             el.dataset.dl = String((Math.random() * 1e9) | 0);
-
             const mb  = (m.approxBytes / 1048576).toFixed(0);
             const imb = (m.bytes / 1048576).toFixed(0);
-
             el.innerHTML =
                 '<div class="xl-model-head">' +
                     '<div class="xl-model-icon"><i class="fa-solid fa-microchip"></i></div>' +
-                    '<div class="xl-model-title">' +
-                        escapeHtml(m.name) +
+                    '<div class="xl-model-title">' + escapeHtml(m.name) +
                         '<div class="xl-model-cat">' + escapeHtml(m.category || '') + '</div>' +
                     '</div>' +
                     (m.active ? '<span class="star"><i class="fa-solid fa-star"></i></span>' : '') +
@@ -374,9 +458,7 @@
                 '</div>' +
                 '<div class="bar"><i></i></div>' +
                 '<div class="actions"></div>';
-
             const actions = el.querySelector('.actions');
-
             if (!m.ready) {
                 const btn = document.createElement('button');
                 btn.className = 'primary';
@@ -417,12 +499,10 @@
     async function reloadModel() {
         const models = JSON.parse(window.Xenon.listModels());
         const active = models.find(m => m.active && m.ready);
-
         const headerModel = $('#headerModel');
         if (headerModel) {
             headerModel.classList.remove('ready', 'busy');
-            headerModel.querySelector('span:last-child').textContent =
-                active ? active.name : 'No model';
+            headerModel.querySelector('span:last-child').textContent = active ? active.name : 'No model';
             if (active) headerModel.classList.add('ready');
         }
         const sideModel = $('#sidebarModel');
@@ -431,11 +511,7 @@
                 ? '<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ' + escapeHtml(active.name)
                 : '<i class="fa-solid fa-circle-notch"></i> No model loaded';
         }
-        if (!active) {
-            setIsland(null, 'XenonLabs', 'No model');
-            renderChat();
-            return;
-        }
+        if (!active) { setIsland(null, 'XenonLabs', 'No model'); renderChat(); return; }
         setIsland('generating', 'Loading…', '');
         const path = window.Xenon.modelPath(active.filename);
         setTimeout(() => {
@@ -446,7 +522,6 @@
         }, 40);
     }
 
-    /* -------- settings -------- */
     function bindRange(id, outId, fmt) {
         const el  = document.getElementById(id);
         const out = document.getElementById(outId);
@@ -456,24 +531,25 @@
         update();
     }
     const DEFAULTS = {
-        maxTokens: 256, temperature: 0.7,
-        topP: 0.95, topK: 40, repeatPenalty: 1.10,
-        threads: 4, ctx: 2048, seed: -1,
+        maxTokens: 256, temperature: 0.7, topP: 0.95, topK: 40,
+        repeatPenalty: 1.10, threads: 4, ctx: 2048, seed: -1,
         theme: 'dark', autoScroll: true, streaming: true,
-        system: 'You are a helpful assistant.',
+        markdown: true,
+        system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.',
     };
-    function applyTheme(theme) { document.body.dataset.theme = theme || 'dark'; }
+    function applyTheme(t) { document.body.dataset.theme = t || 'dark'; }
 
     function loadSettings() {
         const s = JSON.parse(window.Xenon.getSettings());
         const local = {
             repeatPenalty: parseFloat(store.getItem('xenon.repeatPenalty') || DEFAULTS.repeatPenalty),
-            threads:       parseInt(store.getItem('xenon.threads') || DEFAULTS.threads, 10),
-            ctx:           parseInt(store.getItem('xenon.ctx') || DEFAULTS.ctx, 10),
-            seed:          parseInt(store.getItem('xenon.seed') || DEFAULTS.seed, 10),
-            theme:         store.getItem('xenon.theme') || DEFAULTS.theme,
-            autoScroll:    store.getItem('xenon.autoScroll') !== '0',
-            streaming:     store.getItem('xenon.streaming') !== '0',
+            threads: parseInt(store.getItem('xenon.threads') || DEFAULTS.threads, 10),
+            ctx: parseInt(store.getItem('xenon.ctx') || DEFAULTS.ctx, 10),
+            seed: parseInt(store.getItem('xenon.seed') || DEFAULTS.seed, 10),
+            theme: store.getItem('xenon.theme') || DEFAULTS.theme,
+            autoScroll: store.getItem('xenon.autoScroll') !== '0',
+            streaming: store.getItem('xenon.streaming') !== '0',
+            markdown: store.getItem('xenon.md') !== '0',
         };
         if ($('#sMax'))    $('#sMax').value    = s.maxTokens;
         if ($('#sTemp'))   $('#sTemp').value   = Math.round(s.temperature * 100);
@@ -486,6 +562,7 @@
         if ($('#sSystem')) $('#sSystem').value = s.system;
         if ($('#swAutoScroll')) $('#swAutoScroll').checked = local.autoScroll;
         if ($('#swStream'))     $('#swStream').checked     = local.streaming;
+        if ($('#swMarkdown'))   $('#swMarkdown').checked   = local.markdown;
         applyTheme(local.theme);
         $$('#themeSegment button').forEach(b =>
             b.classList.toggle('active', b.dataset.theme === local.theme));
@@ -514,48 +591,47 @@
     const swStream = $('#swStream');
     if (swStream) swStream.addEventListener('change', e =>
         store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
+    const swMarkdown = $('#swMarkdown');
+    if (swMarkdown) swMarkdown.addEventListener('change', e => {
+        store.setItem('xenon.md', e.target.checked ? '1' : '0');
+        toast(e.target.checked ? 'Markdown on' : 'Markdown off');
+    });
 
     const saveBtn = $('#save');
     if (saveBtn) saveBtn.onclick = () => {
         window.Xenon.saveSettings(
-            +$('#sMax').value,
-            +$('#sTemp').value / 100,
-            +$('#sTopP').value / 100,
-            +$('#sTopK').value,
+            +$('#sMax').value, +$('#sTemp').value / 100,
+            +$('#sTopP').value / 100, +$('#sTopK').value,
             $('#sSystem').value);
         store.setItem('xenon.repeatPenalty', (+$('#sRep').value / 100).toFixed(2));
-        store.setItem('xenon.threads',       String(+$('#sThreads').value));
-        store.setItem('xenon.ctx',           String(+$('#sCtx').value));
-        store.setItem('xenon.seed',          String(+$('#sSeed').value));
+        store.setItem('xenon.threads', String(+$('#sThreads').value));
+        store.setItem('xenon.ctx', String(+$('#sCtx').value));
+        store.setItem('xenon.seed', String(+$('#sSeed').value));
         const m = $('#savedMsg');
         if (m) { m.innerHTML = '<i class="fa-solid fa-check"></i> Saved'; setTimeout(() => m.textContent = '', 1500); }
+        toast('Settings saved');
     };
 
     const clearBtn = $('#clearHistory');
     if (clearBtn) clearBtn.onclick = () => {
         if (!confirm('Delete all conversations? This cannot be undone.')) return;
-        convs = [];
-        activeId = null;
-        store.removeItem(CONV_KEY);
-        store.removeItem(ACTIVE_KEY);
-        renderHistory();
-        renderChat();
+        convs = []; activeId = null;
+        store.removeItem(CONV_KEY); store.removeItem(ACTIVE_KEY);
+        renderHistory(); renderChat();
     };
     const resetBtn = $('#resetSettings');
     if (resetBtn) resetBtn.onclick = () => {
         if (!confirm('Reset all settings to defaults?')) return;
-        window.Xenon.saveSettings(
-            DEFAULTS.maxTokens, DEFAULTS.temperature,
+        window.Xenon.saveSettings(DEFAULTS.maxTokens, DEFAULTS.temperature,
             DEFAULTS.topP, DEFAULTS.topK, DEFAULTS.system);
         ['xenon.repeatPenalty','xenon.threads','xenon.ctx','xenon.seed',
-         'xenon.theme','xenon.autoScroll','xenon.streaming']
+         'xenon.theme','xenon.autoScroll','xenon.streaming','xenon.md']
             .forEach(k => store.removeItem(k));
         loadSettings();
     };
     const refreshBtn = $('#refreshModelsBtn');
     if (refreshBtn) refreshBtn.onclick = () => loadModels();
 
-    /* -------- boot -------- */
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }
         try { await loadModels(); } catch (e) { showError('models: ' + e); }

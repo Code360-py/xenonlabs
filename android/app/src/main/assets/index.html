@@ -62,6 +62,18 @@
             </button>
         </header>
         <div class="xl-scroll">
+            <button id="importModelBtn" class="xl-import-btn">
+                <i class="fa-solid fa-file-circle-plus"></i>
+                <span>
+                    <strong>Import .gguf from device</strong>
+                    <em>Pick any GGUF file — it stays on your phone</em>
+                </span>
+            </button>
+            <div id="importProgress" class="xl-import-progress" hidden>
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+                <span id="importProgressText">Importing…</span>
+            </div>
+
             <div id="modelList" class="xl-model-list"></div>
             <div class="xl-gap"></div>
         </div>

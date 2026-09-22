@@ -2,7 +2,10 @@ package com.xenonlabs.app;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -13,6 +16,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
@@ -47,6 +52,8 @@ public class MainActivity extends AppCompatActivity {
     private WebView web;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long currentCallbackId = -1;
+    private ActivityResultLauncher<String[]> filePicker;
+    private volatile boolean importing = false;
 
     private void showCrash(String where, Throwable t) {
         StringWriter sw = new StringWriter();
@@ -188,6 +195,18 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+
+        filePicker = registerForActivityResult(
+            new ActivityResultContracts.OpenDocument(),
+            uri -> {
+                importing = false;
+                if (uri == null) {
+                    eval("window.__xenonImportError && window.__xenonImportError('cancelled');");
+                    return;
+                }
+                new Thread(() -> importGguf(uri)).start();
+            });
+
         try {
             setContentView(R.layout.activity_main);
 
@@ -223,6 +242,105 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
+    /* ============================================================
+       Import a .gguf file from the device's file system
+       ============================================================ */
+
+    @JavascriptInterface
+    public void importModel() {
+        importing = true;
+        ui.post(() -> {
+            try {
+                /* any MIME — Android shows "Browse" fallback for gguf */
+                filePicker.launch(new String[]{"*/*"});
+            } catch (Throwable t) {
+                importing = false;
+                eval("window.__xenonImportError && window.__xenonImportError('" +
+                     JSONObject.quote(String.valueOf(t.getMessage())) + "');");
+            }
+        });
+    }
+
+    @JavascriptInterface
+    public boolean isImporting() { return importing; }
+
+    private void importGguf(Uri uri) {
+        try {
+            String display = queryDisplayName(uri);
+            if (display == null || !display.toLowerCase().endsWith(".gguf")) {
+                eval("window.__xenonImportError && window.__xenonImportError('Not a .gguf file');");
+                return;
+            }
+
+            File dst = new File(getFilesDir(), display);
+
+            /* if same name exists, add suffix */
+            if (dst.exists()) {
+                String base = display.substring(0, display.length() - 5);
+                int i = 1;
+                while (dst.exists()) {
+                    dst = new File(getFilesDir(), base + "-" + i + ".gguf");
+                    i++;
+                }
+            }
+
+            long total = querySize(uri);
+            long done = 0;
+            try (java.io.InputStream in = getContentResolver().openInputStream(uri);
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(dst)) {
+                if (in == null) throw new Exception("cannot open stream");
+                byte[] buf = new byte[1 << 16];
+                int n; long last = 0;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    done += n;
+                    long now = System.currentTimeMillis();
+                    if (now - last > 300) {
+                        last = now;
+                        int pct = total > 0 ? (int)(done * 100 / total) : -1;
+                        long mbD = done / (1024 * 1024);
+                        long mbT = total > 0 ? total / (1024 * 1024) : 0;
+                        String msg = pct >= 0
+                            ? ("Importing " + mbD + " / " + mbT + " MB · " + pct + "%")
+                            : ("Importing " + mbD + " MB");
+                        eval("window.__xenonImportProgress && window.__xenonImportProgress(" +
+                             JSONObject.quote(msg) + ");");
+                    }
+                }
+            }
+
+            /* register as a custom model in JS land, then activate it */
+            eval("window.__xenonImportDone && window.__xenonImportDone(" +
+                 JSONObject.quote(dst.getName()) + ");");
+        } catch (Throwable t) {
+            eval("window.__xenonImportError && window.__xenonImportError(" +
+                 JSONObject.quote(String.valueOf(t.getMessage())) + ");");
+        }
+    }
+
+    private String queryDisplayName(Uri uri) {
+        try (android.database.Cursor c =
+                 getContentResolver().query(uri, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0) return c.getString(idx);
+            }
+        } catch (Throwable ignored) {}
+        String last = uri.getLastPathSegment();
+        return last != null ? last : "model.gguf";
+    }
+
+    private long querySize(Uri uri) {
+        try (android.database.Cursor c =
+                 getContentResolver().query(uri, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int idx = c.getColumnIndex(OpenableColumns.SIZE);
+                if (idx >= 0) return c.getLong(idx);
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
+
     public class Bridge {
         @JavascriptInterface public int    loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void   shutdown()                                 { MainActivity.this.shutdown(); }
@@ -239,5 +357,7 @@ public class MainActivity extends AppCompatActivity {
         }
         @JavascriptInterface public String modelPath(String f)                         { return MainActivity.this.modelPath(f); }
         @JavascriptInterface public void   downloadModel(String u, String f, long id)  { MainActivity.this.downloadModel(u, f, id); }
+        @JavascriptInterface public void   importModel()                              { MainActivity.this.importModel(); }
+        @JavascriptInterface public boolean isImporting()                             { return MainActivity.this.isImporting(); }
     }
 }

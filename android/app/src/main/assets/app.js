@@ -630,6 +630,24 @@
         let models;
         try { models = JSON.parse(window.Xenon.listModels()); }
         catch (_) { models = []; }
+
+        /* Merge device-imported models */
+        const imports = loadImports();
+        for (const imp of imports) {
+            if (!models.find(m => m.filename === imp.filename)) {
+                models.push({
+                    name: imp.filename.replace(/\.gguf$/i, ''),
+                    category: 'Imported · ' + new Date(imp.importedAt).toLocaleDateString(),
+                    filename: imp.filename,
+                    url: '',
+                    approxBytes: 0,   /* unknown, size read from disk */
+                    bytes: 0,
+                    ready: true,      /* it exists on disk since we imported it */
+                    active: false,
+                    imported: true
+                });
+            }
+        }
         list.innerHTML = '';
         if (!models.length) {
             list.innerHTML = '<div class="xl-empty"><div class="xl-empty-icon"><i class="fa-solid fa-cube"></i></div><div class="xl-empty-title">No models</div></div>';
@@ -650,14 +668,40 @@
                     (m.active ? '<span class="star"><i class="fa-solid fa-star"></i></span>' : '') +
                 '</div>' +
                 '<div class="meta">' +
-                    (m.ready
-                        ? '<i class="fa-solid fa-check"></i> Installed · ' + imb + ' MB'
-                        : '<i class="fa-solid fa-cloud-arrow-down"></i> Not downloaded · ' + mb + ' MB') +
+                    (m.imported
+                        ? '<i class="fa-solid fa-file-import"></i> Imported'
+                        : (m.ready
+                            ? '<i class="fa-solid fa-check"></i> Installed · ' + imb + ' MB'
+                            : '<i class="fa-solid fa-cloud-arrow-down"></i> Not downloaded · ' + mb + ' MB')) +
                 '</div>' +
                 '<div class="bar"><i></i></div>' +
                 '<div class="actions"></div>';
             const actions = el.querySelector('.actions');
-            if (!m.ready) {
+            if (m.imported) {
+                /* Imported models: only Use + Delete */
+                const use = document.createElement('button');
+                use.className = m.active ? '' : 'primary';
+                use.innerHTML = m.active
+                    ? '<i class="fa-solid fa-check"></i> Selected'
+                    : '<i class="fa-solid fa-play"></i> Use';
+                use.disabled = m.active;
+                use.onclick = async () => {
+                    window.Xenon.setActiveModel(m.filename);
+                    await loadModels();
+                    await reloadModel();
+                };
+                actions.appendChild(use);
+
+                const del = document.createElement('button');
+                del.innerHTML = '<i class="fa-solid fa-trash"></i> Remove';
+                del.onclick = () => {
+                    if (!confirm('Remove ' + m.name + '?')) return;
+                    window.Xenon.deleteModel(m.filename);
+                    removeImport(m.filename);
+                    setTimeout(loadModels, 150);
+                };
+                actions.appendChild(del);
+            } else if (!m.ready) {
                 const btn = document.createElement('button');
                 btn.className = 'primary';
                 btn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
@@ -841,6 +885,65 @@
 
     const refreshBtn = document.getElementById('refreshModelsBtn');
     if (refreshBtn) refreshBtn.onclick = () => loadModels();
+
+    /* ============================================================
+       Import GGUF from device
+       ============================================================ */
+
+    const IMPORTS_KEY = 'xenon.imports';
+
+    function loadImports() {
+        try { return JSON.parse(store.getItem(IMPORTS_KEY) || '[]'); }
+        catch (_) { return []; }
+    }
+    function saveImports(list) {
+        try { store.setItem(IMPORTS_KEY, JSON.stringify(list)); } catch (_) {}
+    }
+    function addImport(filename) {
+        const list = loadImports();
+        if (!list.find(x => x.filename === filename)) {
+            list.unshift({ filename, importedAt: Date.now() });
+            saveImports(list);
+        }
+    }
+    function removeImport(filename) {
+        const list = loadImports().filter(x => x.filename !== filename);
+        saveImports(list);
+    }
+
+    /* Called from Java when a file finishes importing */
+    window.__xenonImportProgress = msg => {
+        const box = document.getElementById('importProgress');
+        const txt = document.getElementById('importProgressText');
+        if (box && txt) {
+            box.hidden = false;
+            txt.textContent = msg;
+        }
+    };
+    window.__xenonImportDone = filename => {
+        const box = document.getElementById('importProgress');
+        if (box) box.hidden = true;
+        addImport(filename);
+        toast('Imported ' + filename);
+        loadModels();
+    };
+    window.__xenonImportError = msg => {
+        const box = document.getElementById('importProgress');
+        if (box) box.hidden = true;
+        if (msg === 'cancelled') return;
+        toast('Import failed: ' + msg, 'fa-solid fa-triangle-exclamation');
+    };
+
+    const importBtn = document.getElementById('importModelBtn');
+    if (importBtn) importBtn.onclick = () => {
+        const box = document.getElementById('importProgress');
+        const txt = document.getElementById('importProgressText');
+        if (box && txt) { box.hidden = false; txt.textContent = 'Waiting for file…'; }
+        try { window.Xenon.importModel(); } catch (e) {
+            if (box) box.hidden = true;
+            toast('Cannot open file picker');
+        }
+    };
 
     /* ---------- boot ---------- */
     (async function boot() {

@@ -30,28 +30,25 @@
     <!-- ============ CHAT ============ -->
     <section id="view-chat" class="xl-view active">
 
-        <header class="xl-topbar">
-            <div class="xl-topbar-left">
-                <button type="button" id="sidebarBtn" class="xl-topbar-btn" aria-label="Menu">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
+        <!-- slim header only shows the ☰ and the current model -->
+        <header class="xl-chat-header">
+            <button type="button" id="sidebarBtn" class="xl-header-btn" aria-label="Menu">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <div class="xl-header-model" id="headerModel">
+                <span class="dot"></span>
+                <span>No model</span>
             </div>
-            <div class="xl-topbar-title">
-                <div id="chatTitle" class="xl-topbar-title-main">XenonLabs</div>
-                <div id="chatSub" class="xl-topbar-title-sub">No model</div>
-            </div>
-            <div class="xl-topbar-right">
-                <button type="button" id="newChatBtn" class="xl-topbar-btn" aria-label="New chat">
-                    <i class="fa-solid fa-plus"></i>
-                </button>
-            </div>
+            <button type="button" id="newChatBtn" class="xl-header-btn" aria-label="New chat">
+                <i class="fa-solid fa-pen-to-square"></i>
+            </button>
         </header>
 
         <div id="messages" class="xl-messages"></div>
 
         <div class="xl-composer">
             <form id="composer" autocomplete="off">
-                <textarea id="prompt" rows="1" placeholder="Message" aria-label="Message"></textarea>
+                <textarea id="prompt" rows="1" placeholder="Message Xenon" aria-label="Message"></textarea>
                 <button id="send" type="submit" class="xl-icon-btn xl-send" aria-label="Send" disabled>
                     <i class="fa-solid fa-arrow-up"></i>
                 </button>
@@ -61,18 +58,12 @@
 
     <!-- ============ MODELS ============ -->
     <section id="view-models" class="xl-view">
-
-        <header class="xl-topbar">
-            <div class="xl-topbar-left"></div>
-            <div class="xl-topbar-title">
-                <div class="xl-topbar-title-main">Models</div>
-                <div class="xl-topbar-title-sub">Download once, use offline</div>
-            </div>
-            <div class="xl-topbar-right">
-                <button type="button" id="refreshModelsBtn" class="xl-topbar-btn" aria-label="Refresh">
-                    <i class="fa-solid fa-rotate"></i>
-                </button>
-            </div>
+        <header class="xl-chat-header">
+            <div class="xl-header-spacer"></div>
+            <div class="xl-header-title">Models</div>
+            <button type="button" id="refreshModelsBtn" class="xl-header-btn" aria-label="Refresh">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
         </header>
 
         <div class="xl-scroll">
@@ -83,14 +74,10 @@
 
     <!-- ============ SETTINGS ============ -->
     <section id="view-settings" class="xl-view">
-
-        <header class="xl-topbar">
-            <div class="xl-topbar-left"></div>
-            <div class="xl-topbar-title">
-                <div class="xl-topbar-title-main">Settings</div>
-                <div class="xl-topbar-title-sub">Generation parameters</div>
-            </div>
-            <div class="xl-topbar-right"></div>
+        <header class="xl-chat-header">
+            <div class="xl-header-spacer"></div>
+            <div class="xl-header-title">Settings</div>
+            <div class="xl-header-spacer"></div>
         </header>
 
         <div class="xl-scroll">
@@ -101,7 +88,7 @@
                     <span><i class="fa-solid fa-hashtag xl-row-icon"></i>Max tokens</span>
                     <output id="oMax">256</output>
                 </div>
-                <input type="range" id="sMax" min="32" max="1024" step="32" value="256" class="form-range">
+                <input type="range" id="sMax" min="32" max="2048" step="32" value="256" class="form-range">
 
                 <div class="xl-row">
                     <span><i class="fa-solid fa-temperature-half xl-row-icon"></i>Temperature</span>
@@ -120,17 +107,90 @@
                     <output id="oTopK">40</output>
                 </div>
                 <input type="range" id="sTopK" min="0" max="100" step="1" value="40" class="form-range">
+
+                <div class="xl-row">
+                    <span><i class="fa-solid fa-repeat xl-row-icon"></i>Repeat penalty</span>
+                    <output id="oRep">1.10</output>
+                </div>
+                <input type="range" id="sRep" min="100" max="150" step="1" value="110" class="form-range">
+            </div>
+
+            <h6 class="xl-section">Performance</h6>
+            <div class="xl-card">
+                <div class="xl-row">
+                    <span><i class="fa-solid fa-microchip xl-row-icon"></i>Threads</span>
+                    <output id="oThreads">4</output>
+                </div>
+                <input type="range" id="sThreads" min="1" max="8" step="1" value="4" class="form-range">
+
+                <div class="xl-row">
+                    <span><i class="fa-solid fa-window-maximize xl-row-icon"></i>Context size</span>
+                    <output id="oCtx">2048</output>
+                </div>
+                <input type="range" id="sCtx" min="512" max="8192" step="512" value="2048" class="form-range">
+
+                <div class="xl-row">
+                    <span><i class="fa-solid fa-seedling xl-row-icon"></i>Random seed</span>
+                    <output id="oSeed">-1</output>
+                </div>
+                <input type="range" id="sSeed" min="-1" max="9999" step="1" value="-1" class="form-range">
+            </div>
+
+            <h6 class="xl-section">Appearance</h6>
+            <div class="xl-card">
+                <div class="xl-row">
+                    <span><i class="fa-solid fa-circle-half-stroke xl-row-icon"></i>Theme</span>
+                </div>
+                <div class="xl-segment" id="themeSegment">
+                    <button data-theme="dark" class="active">Dark</button>
+                    <button data-theme="darker">Darker</button>
+                    <button data-theme="blue">Midnight</button>
+                </div>
+
+                <div class="xl-row" style="margin-top:14px;">
+                    <span><i class="fa-solid fa-arrow-down xl-row-icon"></i>Auto-scroll</span>
+                    <label class="xl-switch">
+                        <input type="checkbox" id="swAutoScroll" checked>
+                        <i></i>
+                    </label>
+                </div>
+
+                <div class="xl-row">
+                    <span><i class="fa-solid fa-wand-magic-sparkles xl-row-icon"></i>Streaming</span>
+                    <label class="xl-switch">
+                        <input type="checkbox" id="swStream" checked>
+                        <i></i>
+                    </label>
+                </div>
             </div>
 
             <h6 class="xl-section">System prompt</h6>
             <div class="xl-card">
+                <div class="xl-presets">
+                    <button class="xl-chip" data-preset="You are a helpful assistant.">Default</button>
+                    <button class="xl-chip" data-preset="You are a concise coding assistant. Always give short, working code samples.">Coder</button>
+                    <button class="xl-chip" data-preset="You are a wise teacher. Explain concepts clearly with examples.">Teacher</button>
+                    <button class="xl-chip" data-preset="You are a creative writer. Write vivid, engaging prose.">Writer</button>
+                    <button class="xl-chip" data-preset="Reply in under 20 words. Be extremely brief.">Terse</button>
+                </div>
                 <textarea id="sSystem" rows="4" class="form-control xl-textarea">You are a helpful assistant.</textarea>
             </div>
 
             <button id="save" class="xl-save">
-                <i class="fa-solid fa-floppy-disk"></i> Save
+                <i class="fa-solid fa-floppy-disk"></i> Save settings
             </button>
             <div id="savedMsg" class="xl-hint"></div>
+
+            <h6 class="xl-section">Danger zone</h6>
+            <div class="xl-card">
+                <button id="clearHistory" class="xl-danger">
+                    <i class="fa-solid fa-trash"></i> Clear all conversations
+                </button>
+                <button id="resetSettings" class="xl-danger" style="margin-top:8px;">
+                    <i class="fa-solid fa-rotate-left"></i> Reset to defaults
+                </button>
+            </div>
+
             <div class="xl-gap"></div>
         </div>
     </section>
@@ -150,26 +210,26 @@
     </button>
 </nav>
 
-<!-- ===================== Sidebar ===================== -->
+<!-- ===================== Sidebar: conversations ===================== -->
 <div id="sidebarScrim" class="xl-scrim" hidden></div>
 
 <aside id="sidebar" class="xl-sidebar" hidden>
     <div class="xl-sidebar-head">
-        <div class="xl-avatar">X</div>
-        <div class="xl-sidebar-name">XenonLabs</div>
-        <div class="xl-sidebar-sub">Local LLM on device</div>
+        <div class="xl-sidebar-brand">
+            <div class="xl-avatar">X</div>
+            <div>
+                <div class="xl-sidebar-name">XenonLabs</div>
+                <div class="xl-sidebar-sub">Local LLM on device</div>
+            </div>
+        </div>
+        <button id="sidebarNewChat" class="xl-sidebar-new">
+            <i class="fa-solid fa-plus"></i> New chat
+        </button>
     </div>
-    <nav class="xl-sidebar-nav">
-        <button class="xl-sidebar-item" data-nav="chat">
-            <i class="fa-solid fa-comment"></i><span>Chat</span>
-        </button>
-        <button class="xl-sidebar-item" data-nav="models">
-            <i class="fa-solid fa-cube"></i><span>Models</span>
-        </button>
-        <button class="xl-sidebar-item" data-nav="settings">
-            <i class="fa-solid fa-sliders"></i><span>Settings</span>
-        </button>
-    </nav>
+
+    <div class="xl-sidebar-section-title">Recent</div>
+    <div id="historyList" class="xl-history"></div>
+
     <div class="xl-sidebar-foot">
         <div id="sidebarModel" class="xl-sidebar-model">
             <i class="fa-solid fa-circle-notch"></i> No model loaded

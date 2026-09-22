@@ -1,8 +1,8 @@
-/* XenonLabs UI logic */
+/* XenonLabs UI logic — with ChatGPT-style history */
 (function () {
     'use strict';
 
-    /* ---------- safe localStorage (file:// can throw) ---------- */
+    /* ---------- safe localStorage ---------- */
     const store = (() => {
         try { localStorage.setItem('_t','1'); localStorage.removeItem('_t'); return localStorage; }
         catch (_) {
@@ -26,18 +26,153 @@
     }
     window.addEventListener('error', e => showError('JS: ' + e.message));
 
-    /* ---------- tabs ---------- */
+    /* ============================================================
+       CONVERSATIONS  (ChatGPT-style)
+       ============================================================ */
+
+    const CONV_KEY = 'xenon.convs';
+    const ACTIVE_KEY = 'xenon.activeConv';
+
+    function loadConvs() {
+        try { return JSON.parse(store.getItem(CONV_KEY) || '[]'); }
+        catch (_) { return []; }
+    }
+    function saveConvs(list) {
+        try { store.setItem(CONV_KEY, JSON.stringify(list)); } catch (_) {}
+    }
+
+    let convs = loadConvs();
+    let activeId = store.getItem(ACTIVE_KEY) || null;
+
+    function findConv(id) { return convs.find(c => c.id === id); }
+
+    function newConversation() {
+        const c = {
+            id: 'c_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
+            title: 'New chat',
+            created: Date.now(),
+            updated: Date.now(),
+            messages: [],
+        };
+        convs.unshift(c);
+        activeId = c.id;
+        store.setItem(ACTIVE_KEY, activeId);
+        saveConvs(convs);
+        return c;
+    }
+
+    function currentConversation() {
+        let c = findConv(activeId);
+        if (!c) c = newConversation();
+        return c;
+    }
+
+    function updateTitleFromFirstMessage(c) {
+        if (c.title && c.title !== 'New chat') return;
+        const firstUser = c.messages.find(m => m.role === 'user');
+        if (!firstUser) return;
+        const t = firstUser.text.replace(/\s+/g, ' ').trim();
+        c.title = t.length > 34 ? t.slice(0, 34).trim() + '…' : t;
+    }
+
+    function persistActive() {
+        const c = findConv(activeId);
+        if (!c) return;
+        c.updated = Date.now();
+        saveConvs(convs);
+        renderHistory();
+    }
+
+    function deleteConversation(id) {
+        convs = convs.filter(c => c.id !== id);
+        if (activeId === id) activeId = convs[0] ? convs[0].id : null;
+        store.setItem(ACTIVE_KEY, activeId || '');
+        saveConvs(convs);
+        renderHistory();
+    }
+
+    function relativeTime(ts) {
+        const s = (Date.now() - ts) / 1000;
+        if (s < 60)    return 'now';
+        if (s < 3600)  return Math.floor(s / 60) + 'm';
+        if (s < 86400) return Math.floor(s / 3600) + 'h';
+        const d = Math.floor(s / 86400);
+        if (d < 7)     return d + 'd';
+        return Math.floor(d / 7) + 'w';
+    }
+
+    function renderHistory() {
+        const list = $('#historyList');
+        if (!list) return;
+
+        if (!convs.length) {
+            list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>';
+            return;
+        }
+
+        /* newest first */
+        const sorted = convs.slice().sort((a, b) => b.updated - a.updated);
+
+        list.innerHTML = '';
+        for (const c of sorted) {
+            const el = document.createElement('div');
+            el.className = 'xl-history-item' + (c.id === activeId ? ' active' : '');
+            el.dataset.id = c.id;
+            el.innerHTML =
+                '<i class="fa-regular fa-message lead"></i>' +
+                '<span class="xl-history-title">' + escapeHtml(c.title || 'New chat') + '</span>' +
+                '<span class="xl-history-time">' + relativeTime(c.updated) + '</span>' +
+                '<button class="del" aria-label="Delete"><i class="fa-solid fa-xmark"></i></button>';
+
+            el.addEventListener('click', (ev) => {
+                if (ev.target.closest('.del')) return;
+                switchToConversation(c.id);
+            });
+            el.querySelector('.del').addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (confirm('Delete "' + (c.title || 'New chat') + '"?'))
+                    deleteConversation(c.id);
+            });
+
+            list.appendChild(el);
+        }
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function switchToConversation(id) {
+        if (activeId === id) { closeSidebar(); return; }
+        activeId = id;
+        store.setItem(ACTIVE_KEY, activeId);
+        renderChat();
+        renderHistory();
+        closeSidebar();
+    }
+
+    /* ============================================================
+       TABS
+       ============================================================ */
+
     function activateTab(name) {
         $$('.xl-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
         $$('.xl-view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     }
     $$('.xl-tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
-    /* ---------- sidebar ---------- */
+    /* ============================================================
+       SIDEBAR
+       ============================================================ */
+
     const sidebar = $('#sidebar');
     const scrim   = $('#sidebarScrim');
 
-    function openSidebar()  { if (scrim) scrim.hidden = false; if (sidebar) sidebar.hidden = false; }
+    function openSidebar()  {
+        if (scrim) scrim.hidden = false;
+        if (sidebar) sidebar.hidden = false;
+        renderHistory();
+    }
     function closeSidebar() {
         if (sidebar) sidebar.classList.add('closing');
         if (scrim)   scrim.classList.add('closing');
@@ -46,33 +181,29 @@
             if (scrim)   { scrim.hidden = true;   scrim.classList.remove('closing'); }
         }, 220);
     }
+
     const sb = $('#sidebarBtn'); if (sb) sb.onclick = openSidebar;
     if (scrim) scrim.onclick = closeSidebar;
-    $$('.xl-sidebar-item').forEach(b => b.addEventListener('click', () => {
-        activateTab(b.dataset.nav);
+
+    const sidebarNew = $('#sidebarNewChat');
+    if (sidebarNew) sidebarNew.onclick = () => {
+        const c = newConversation();
+        renderChat();
+        renderHistory();
         closeSidebar();
-    }));
-
-    /* ---------- topbar actions ---------- */
-    const refreshBtn = $('#refreshModelsBtn');
-    if (refreshBtn) refreshBtn.onclick = () => loadModels();
-
-    const newChatBtn = $('#newChatBtn');
-    if (newChatBtn) newChatBtn.onclick = () => {
-        if (messages) messages.innerHTML = '';
-        /* Re-render empty state based on whether a model is loaded */
-        const models = JSON.parse(window.Xenon.listModels());
-        const active = models.find(m => m.active && m.ready);
-        if (active) {
-            showEmptyState('Ready', 'Ask anything', 'fa-solid fa-bolt');
-        } else {
-            showEmptyState('No model loaded',
-                           'Open the Models tab to download one',
-                           'fa-solid fa-comment-dots');
-        }
     };
 
-    /* ---------- dynamic island ---------- */
+    const headerNew = $('#newChatBtn');
+    if (headerNew) headerNew.onclick = () => {
+        const c = newConversation();
+        renderChat();
+        renderHistory();
+    };
+
+    /* ============================================================
+       ISLAND
+       ============================================================ */
+
     const island     = $('#island');
     const islandText = $('#islandText');
     const islandStat = $('#islandStatus');
@@ -85,15 +216,10 @@
         island.classList.toggle('expanded', Boolean(status));
     }
 
-    /* ---------- topbar title (chat) ---------- */
-    function setChatTopbar(mainText, subText) {
-        const m = $('#chatTitle');
-        const s = $('#chatSub');
-        if (m) m.textContent = mainText || 'XenonLabs';
-        if (s) s.textContent = subText || 'No model';
-    }
+    /* ============================================================
+       STREAMING DISPATCHER
+       ============================================================ */
 
-    /* ---------- streaming dispatcher ---------- */
     let nextId = 1;
     const streams = new Map();
 
@@ -121,15 +247,38 @@
         if (el) el.querySelector('.meta').textContent = 'Failed: ' + msg;
     };
 
-    /* ---------- chat ---------- */
+    /* ============================================================
+       CHAT
+       ============================================================ */
+
     const messages = $('#messages');
     const promptEl = $('#prompt');
     const sendBtn  = $('#send');
     let generating = false;
 
-    function clearEmpty() {
-        const e = messages && messages.querySelector('.xl-empty');
-        if (e) e.remove();
+    function renderChat() {
+        const c = currentConversation();
+        if (!messages) return;
+
+        if (!c.messages.length) {
+            const models = JSON.parse(window.Xenon.listModels());
+            const active = models.find(m => m.active && m.ready);
+            showEmptyState(
+                active ? 'Ready' : 'No model loaded',
+                active ? 'Ask anything' : 'Open the Models tab to download one',
+                active ? 'fa-solid fa-bolt' : 'fa-solid fa-comment-dots'
+            );
+            return;
+        }
+
+        messages.innerHTML = '';
+        for (const m of c.messages) {
+            const el = document.createElement('div');
+            el.className = 'xl-bubble ' + (m.role === 'user' ? 'user' : 'assistant');
+            el.textContent = m.text;
+            messages.appendChild(el);
+        }
+        scrollBottom();
     }
 
     function showEmptyState(title, sub, icon) {
@@ -144,16 +293,13 @@
         messages.appendChild(d);
     }
 
-    function addBubble(cls, text) {
-        clearEmpty();
-        const el = document.createElement('div');
-        el.className = 'xl-bubble ' + cls;
-        el.dataset.raw = text || '';
-        if (text) el.textContent = text;
-        if (messages) messages.appendChild(el);
-        scrollBottom();
-        return el;
+    function appendMessage(role, text) {
+        const c = currentConversation();
+        c.messages.push({ role, text, ts: Date.now() });
+        updateTitleFromFirstMessage(c);
+        return c;
     }
+
     function scrollBottom() {
         if (messages) requestAnimationFrame(() => messages.scrollTop = messages.scrollHeight);
     }
@@ -178,12 +324,28 @@
         if (generating) return;
         const text = promptEl.value.trim();
         if (!text) return;
+
         promptEl.value = '';
         promptEl.style.height = 'auto';
         if (sendBtn) sendBtn.disabled = true;
 
-        addBubble('user', text);
-        const asst = addBubble('assistant typing', '');
+        /* clear empty state and add user bubble */
+        const empt = messages.querySelector('.xl-empty'); if (empt) empt.remove();
+        const userEl = document.createElement('div');
+        userEl.className = 'xl-bubble user';
+        userEl.textContent = text;
+        messages.appendChild(userEl);
+        scrollBottom();
+
+        /* persist user message */
+        appendMessage('user', text);
+        persistActive();
+
+        /* assistant placeholder */
+        const asstEl = document.createElement('div');
+        asstEl.className = 'xl-bubble assistant typing';
+        messages.appendChild(asstEl);
+        scrollBottom();
 
         generating = true;
         setIsland('generating', 'Thinking…', '0 tok');
@@ -202,21 +364,24 @@
             onToken: piece => {
                 acc += piece;
                 tokens++;
-                asst.dataset.raw = acc;
-                asst.textContent = acc;
+                asstEl.textContent = acc;
                 scrollBottom();
                 setIsland('generating', 'Generating…', tokens + ' tok');
             },
             onDone: () => {
-                asst.classList.remove('typing');
-                if (!acc) asst.textContent = '[no output]';
+                asstEl.classList.remove('typing');
+                if (!acc) asstEl.textContent = '[no output]';
+                appendMessage('assistant', acc || '[no output]');
+                persistActive();
                 generating = false;
                 if (sendBtn) sendBtn.disabled = !promptEl.value.trim();
                 setIsland('ready', '', '');
             },
             onError: msg => {
-                asst.classList.remove('typing');
-                asst.textContent = '[error: ' + msg + ']';
+                asstEl.classList.remove('typing');
+                asstEl.textContent = '[error: ' + msg + ']';
+                appendMessage('assistant', '[error: ' + msg + ']');
+                persistActive();
                 generating = false;
                 if (sendBtn) sendBtn.disabled = !promptEl.value.trim();
                 setIsland('error', 'Error', String(msg).slice(0, 24));
@@ -231,7 +396,10 @@
         }
     });
 
-    /* ---------- models ---------- */
+    /* ============================================================
+       MODELS
+       ============================================================ */
+
     async function loadModels() {
         const list = $('#modelList');
         if (!list) return;
@@ -312,7 +480,15 @@
         const models = JSON.parse(window.Xenon.listModels());
         const active = models.find(m => m.active && m.ready);
 
-        /* Sidebar status */
+        /* header + sidebar status */
+        const headerModel = $('#headerModel');
+        if (headerModel) {
+            headerModel.classList.remove('ready', 'busy');
+            headerModel.querySelector('span:last-child').textContent =
+                active ? active.name : 'No model';
+            if (active) headerModel.classList.add('ready');
+        }
+
         const sideModel = $('#sidebarModel');
         if (sideModel) {
             sideModel.innerHTML = active
@@ -320,38 +496,29 @@
                 : '<i class="fa-solid fa-circle-notch"></i> No model loaded';
         }
 
-        /* Chat topbar subtitle */
-        if (active) {
-            setChatTopbar('XenonLabs', active.name);
-        } else {
-            setChatTopbar('XenonLabs', 'No model');
-        }
-
         if (!active) {
-            showEmptyState('No model loaded',
-                           'Open the Models tab to download one',
-                           'fa-solid fa-comment-dots');
             setIsland(null, 'XenonLabs', 'No model');
+            renderChat();
             return;
         }
 
-        showEmptyState('Loading model…', active.name, 'fa-solid fa-hourglass-half');
         setIsland('generating', 'Loading…', '');
-
         const path = window.Xenon.modelPath(active.filename);
         setTimeout(() => {
             const rc = window.Xenon.loadModel(path);
             if (rc === 0) {
-                showEmptyState('Ready', 'Ask anything', 'fa-solid fa-bolt');
                 setIsland('ready', active.name, '');
             } else {
-                showEmptyState('Load failed', 'code ' + rc, 'fa-solid fa-triangle-exclamation');
                 setIsland('error', 'Load failed', 'code ' + rc);
             }
+            renderChat();
         }, 40);
     }
 
-    /* ---------- settings ---------- */
+    /* ============================================================
+       SETTINGS
+       ============================================================ */
+
     function bindRange(id, outId, fmt) {
         const el  = document.getElementById(id);
         const out = document.getElementById(outId);
@@ -361,20 +528,81 @@
         update();
     }
 
+    const DEFAULTS = {
+        maxTokens: 256, temperature: 0.7,
+        topP: 0.95, topK: 40, repeatPenalty: 1.10,
+        threads: 4, ctx: 2048, seed: -1,
+        theme: 'dark', autoScroll: true, streaming: true,
+        system: 'You are a helpful assistant.',
+    };
+
+    function applyTheme(theme) {
+        document.body.dataset.theme = theme || 'dark';
+    }
+
     function loadSettings() {
         const s = JSON.parse(window.Xenon.getSettings());
-        if ($('#sMax'))    $('#sMax').value    = s.maxTokens;
-        if ($('#sTemp'))   $('#sTemp').value   = Math.round(s.temperature * 100);
-        if ($('#sTopP'))   $('#sTopP').value   = Math.round(s.topP * 100);
-        if ($('#sTopK'))   $('#sTopK').value   = s.topK;
-        if ($('#sSystem')) $('#sSystem').value = s.system;
+        const local = {
+            repeatPenalty: parseFloat(store.getItem('xenon.repeatPenalty') || DEFAULTS.repeatPenalty),
+            threads:       parseInt(store.getItem('xenon.threads') || DEFAULTS.threads, 10),
+            ctx:           parseInt(store.getItem('xenon.ctx') || DEFAULTS.ctx, 10),
+            seed:          parseInt(store.getItem('xenon.seed') || DEFAULTS.seed, 10),
+            theme:         store.getItem('xenon.theme') || DEFAULTS.theme,
+            autoScroll:    store.getItem('xenon.autoScroll') !== '0',
+            streaming:     store.getItem('xenon.streaming') !== '0',
+        };
+
+        $('#sMax').value    = s.maxTokens;
+        $('#sTemp').value   = Math.round(s.temperature * 100);
+        $('#sTopP').value   = Math.round(s.topP * 100);
+        $('#sTopK').value   = s.topK;
+        $('#sRep').value    = Math.round(local.repeatPenalty * 100);
+        $('#sThreads').value = local.threads;
+        $('#sCtx').value    = local.ctx;
+        $('#sSeed').value   = local.seed;
+        $('#sSystem').value = s.system;
+
+        $('#swAutoScroll').checked = local.autoScroll;
+        $('#swStream').checked     = local.streaming;
+
+        applyTheme(local.theme);
+        $$('#themeSegment button').forEach(b =>
+            b.classList.toggle('active', b.dataset.theme === local.theme));
 
         bindRange('sMax',  'oMax');
         bindRange('sTemp','oTemp', v => (v / 100).toFixed(2));
         bindRange('sTopP','oTopP', v => (v / 100).toFixed(2));
         bindRange('sTopK','oTopK');
+        bindRange('sRep', 'oRep',  v => (v / 100).toFixed(2));
+        bindRange('sThreads','oThreads');
+        bindRange('sCtx', 'oCtx');
+        bindRange('sSeed','oSeed');
     }
 
+    /* theme segment */
+    $$('#themeSegment button').forEach(b => b.addEventListener('click', () => {
+        $$('#themeSegment button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        applyTheme(b.dataset.theme);
+        store.setItem('xenon.theme', b.dataset.theme);
+    }));
+
+    /* system prompt presets */
+    $$('.xl-chip').forEach(chip => chip.addEventListener('click', () => {
+        const ta = $('#sSystem');
+        if (ta) ta.value = chip.dataset.preset;
+    }));
+
+    /* switches */
+    const swAutoScroll = $('#swAutoScroll');
+    if (swAutoScroll) swAutoScroll.addEventListener('change', e =>
+        store.setItem('xenon.autoScroll', e.target.checked ? '1' : '0'));
+
+    const swStream = $('#swStream');
+    if (swStream) swStream.addEventListener('change', e =>
+        store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
+
+    /* save */
     const saveBtn = $('#save');
     if (saveBtn) saveBtn.onclick = () => {
         window.Xenon.saveSettings(
@@ -383,6 +611,12 @@
             +$('#sTopP').value / 100,
             +$('#sTopK').value,
             $('#sSystem').value);
+
+        store.setItem('xenon.repeatPenalty', (+$('#sRep').value / 100).toFixed(2));
+        store.setItem('xenon.threads',       String(+$('#sThreads').value));
+        store.setItem('xenon.ctx',           String(+$('#sCtx').value));
+        store.setItem('xenon.seed',          String(+$('#sSeed').value));
+
         const m = $('#savedMsg');
         if (m) {
             m.innerHTML = '<i class="fa-solid fa-check"></i> Saved';
@@ -390,10 +624,43 @@
         }
     };
 
-    /* ---------- boot ---------- */
+    /* danger zone */
+    const clearBtn = $('#clearHistory');
+    if (clearBtn) clearBtn.onclick = () => {
+        if (!confirm('Delete all conversations? This cannot be undone.')) return;
+        convs = [];
+        activeId = null;
+        store.removeItem(CONV_KEY);
+        store.removeItem(ACTIVE_KEY);
+        renderHistory();
+        renderChat();
+    };
+
+    const resetBtn = $('#resetSettings');
+    if (resetBtn) resetBtn.onclick = () => {
+        if (!confirm('Reset all settings to defaults?')) return;
+        window.Xenon.saveSettings(
+            DEFAULTS.maxTokens, DEFAULTS.temperature,
+            DEFAULTS.topP, DEFAULTS.topK, DEFAULTS.system);
+        ['xenon.repeatPenalty','xenon.threads','xenon.ctx','xenon.seed',
+         'xenon.theme','xenon.autoScroll','xenon.streaming']
+            .forEach(k => store.removeItem(k));
+        loadSettings();
+    };
+
+    /* refresh models button (topbar of Models view) */
+    const refreshBtn = $('#refreshModelsBtn');
+    if (refreshBtn) refreshBtn.onclick = () => loadModels();
+
+    /* ============================================================
+       BOOT
+       ============================================================ */
+
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }
         try { await loadModels(); } catch (e) { showError('models: ' + e); }
+        try { renderHistory(); } catch (e) { showError('history: ' + e); }
+        try { renderChat(); } catch (e) { showError('chat: ' + e); }
         try { await reloadModel(); } catch (e) { showError('reload: ' + e); }
     })();
 })();

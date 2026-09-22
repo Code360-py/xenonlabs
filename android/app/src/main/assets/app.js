@@ -1,4 +1,4 @@
-/* XenonLabs UI — ChatGPT-style chat with history, markdown, copy */
+/* XenonLabs UI — single source of truth */
 (function () {
     'use strict';
 
@@ -21,6 +21,43 @@
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
+    function showError(msg) {
+        const box = document.createElement('div');
+        box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:80px;background:#7a0000;color:#fff;padding:10px;border-radius:8px;font-size:12px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
+        box.textContent = msg;
+        document.body.appendChild(box);
+    }
+    window.addEventListener('error', e => showError('JS: ' + e.message));
+
+    /* ---------- thinking indicator ---------- */
+    function setHeaderThinking(on) {
+        const hm = document.getElementById('headerModel');
+        if (!hm) return;
+        const existing = hm.querySelector('.thinking-dots');
+        if (on && !existing) {
+            const dots = document.createElement('span');
+            dots.className = 'thinking-dots';
+            dots.innerHTML = '<i></i><i></i><i></i>';
+            hm.appendChild(dots);
+        } else if (!on && existing) {
+            existing.remove();
+        }
+    }
+    function showThinkingInBubble(textEl) {
+        if (!textEl) return;
+        textEl.innerHTML = '';
+        const t = document.createElement('div');
+        t.className = 'xl-thinking';
+        t.innerHTML = '<span></span><span></span><span></span>';
+        textEl.appendChild(t);
+    }
+    function clearThinkingInBubble(textEl) {
+        if (!textEl) return;
+        const t = textEl.querySelector('.xl-thinking');
+        if (t) t.remove();
+    }
+
+    /* ---------- markdown ---------- */
     const hasMarked = typeof window.marked !== 'undefined';
     const hasHljs   = typeof window.hljs   !== 'undefined';
     if (hasMarked) {
@@ -59,6 +96,7 @@
         });
     }
 
+    /* ---------- clipboard ---------- */
     function copyText(t) {
         try {
             if (navigator.clipboard && window.isSecureContext) {
@@ -76,6 +114,7 @@
         document.body.removeChild(ta);
     }
 
+    /* ---------- toast ---------- */
     let toastTimer = null;
     function toast(msg, icon) {
         let el = document.getElementById('xlToast');
@@ -92,44 +131,7 @@
         toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
     }
 
-    function showError(msg) {
-        const box = document.createElement('div');
-        box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:80px;background:#7a0000;color:#fff;padding:10px;border-radius:8px;font-size:12px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
-        box.textContent = msg;
-        document.body.appendChild(box);
-    }
-    window.addEventListener('error', e => showError('JS: ' + e.message));
-
-    /* ---------- thinking indicator ---------- */
-    function setHeaderThinking(on) {
-        const hm = document.getElementById('headerModel');
-        if (!hm) return;
-        const existing = hm.querySelector('.thinking-dots');
-        if (on && !existing) {
-            const dots = document.createElement('span');
-            dots.className = 'thinking-dots';
-            dots.innerHTML = '<i></i><i></i><i></i>';
-            hm.appendChild(dots);
-        } else if (!on && existing) {
-            existing.remove();
-        }
-    }
-
-    function showThinkingInBubble(textEl) {
-        if (!textEl) return;
-        textEl.innerHTML = '';
-        const t = document.createElement('div');
-        t.className = 'xl-thinking';
-        t.innerHTML = '<span></span><span></span><span></span>';
-        textEl.appendChild(t);
-    }
-
-    function clearThinkingInBubble(textEl) {
-        if (!textEl) return;
-        const t = textEl.querySelector('.xl-thinking');
-        if (t) t.remove();
-    }
-
+    /* ---------- conversations ---------- */
     const CONV_KEY = 'xenon.convs', ACTIVE_KEY = 'xenon.activeConv';
     function loadConvs() { try { return JSON.parse(store.getItem(CONV_KEY) || '[]'); } catch (_) { return []; } }
     function saveConvs(l) { try { store.setItem(CONV_KEY, JSON.stringify(l)); } catch (_) {} }
@@ -175,9 +177,13 @@
         const d = Math.floor(s / 86400);
         return d < 7 ? d + 'd' : Math.floor(d / 7) + 'w';
     }
+
     function renderHistory() {
         const list = $('#historyList'); if (!list) return;
-        if (!convs.length) { list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>'; return; }
+        if (!convs.length) {
+            list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>';
+            return;
+        }
         const sorted = convs.slice().sort((a, b) => b.updated - a.updated);
         list.innerHTML = '';
         for (const c of sorted) {
@@ -188,7 +194,10 @@
                 '<span class="xl-history-title">' + escapeHtml(c.title || 'New chat') + '</span>' +
                 '<span class="xl-history-time">' + relativeTime(c.updated) + '</span>' +
                 '<button class="del"><i class="fa-solid fa-xmark"></i></button>';
-            el.addEventListener('click', ev => { if (!ev.target.closest('.del')) switchToConversation(c.id); });
+            el.addEventListener('click', ev => {
+                if (ev.target.closest('.del')) return;
+                switchToConversation(c.id);
+            });
             el.querySelector('.del').addEventListener('click', ev => {
                 ev.stopPropagation();
                 if (confirm('Delete "' + (c.title || 'New chat') + '"?')) deleteConversation(c.id);
@@ -202,16 +211,22 @@
         renderChat(); renderHistory(); closeSidebar();
     }
 
+    /* ---------- tabs ---------- */
     function activateTab(name) {
         $$('.xl-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
         $$('.xl-view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     }
     $$('.xl-tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
-    const sidebar = $('#sidebar');
-    const scrim   = $('#sidebarScrim');
-    function openSidebar()  { if (scrim) scrim.hidden = false; if (sidebar) sidebar.hidden = false; renderHistory(); }
+    /* ---------- sidebar ---------- */
+    function openSidebar() {
+        const scrim = $('#sidebarScrim'), sidebar = $('#sidebar');
+        if (scrim) scrim.hidden = false;
+        if (sidebar) sidebar.hidden = false;
+        renderHistory();
+    }
     function closeSidebar() {
+        const sidebar = $('#sidebar'), scrim = $('#sidebarScrim');
         if (sidebar) sidebar.classList.add('closing');
         if (scrim)   scrim.classList.add('closing');
         setTimeout(() => {
@@ -219,25 +234,32 @@
             if (scrim)   { scrim.hidden = true; scrim.classList.remove('closing'); }
         }, 220);
     }
-    const sb = $('#sidebarBtn'); if (sb) sb.onclick = openSidebar;
-    if (scrim) scrim.onclick = closeSidebar;
+    const sbBtn = $('#sidebarBtn');
+    if (sbBtn) sbBtn.onclick = openSidebar;
+    const scrimEl = $('#sidebarScrim');
+    if (scrimEl) scrimEl.onclick = closeSidebar;
     const sidebarNew = $('#sidebarNewChat');
-    if (sidebarNew) sidebarNew.onclick = () => { newConversation(); renderChat(); renderHistory(); closeSidebar(); };
+    if (sidebarNew) sidebarNew.onclick = () => {
+        newConversation(); renderChat(); renderHistory(); closeSidebar();
+    };
     const headerNew = $('#newChatBtn');
-    if (headerNew) headerNew.onclick = () => { newConversation(); renderChat(); renderHistory(); };
+    if (headerNew) headerNew.onclick = () => {
+        newConversation(); renderChat(); renderHistory();
+    };
 
-    const island = $('#island');
-    const islandText = $('#islandText');
-    const islandStat = $('#islandStatus');
+    /* ---------- island ---------- */
     function setIsland(state, text, status) {
+        const island = $('#island');
         if (!island) return;
         island.classList.remove('ready','generating','error','expanded');
         if (state) island.classList.add(state);
-        if (islandText) islandText.textContent = text || 'XenonLabs';
-        if (islandStat) islandStat.textContent = status || '';
+        const t = $('#islandText'), s = $('#islandStatus');
+        if (t) t.textContent = text || 'XenonLabs';
+        if (s) s.textContent = status || '';
         island.classList.toggle('expanded', Boolean(status));
     }
 
+    /* ---------- streaming dispatcher ---------- */
     let nextId = 1;
     const streams = new Map();
     window.__xenonToken = (id, piece) => { const s = streams.get(id); if (s) s.onToken(piece); };
@@ -262,12 +284,14 @@
         if (el) el.querySelector('.meta').textContent = 'Failed: ' + msg;
     };
 
+    /* ---------- chat rendering ---------- */
     const messages = $('#messages');
     const promptEl = $('#prompt');
     const sendBtn  = $('#send');
     let generating = false;
 
-    function makeUserRow(text) {
+    function makeUserRow(text, opts) {
+        opts = opts || {};
         const row = document.createElement('div');
         row.className = 'xl-msg user';
         row.innerHTML =
@@ -277,12 +301,73 @@
             '</div>' +
             '<div class="xl-msg-body">' +
                 '<div class="xl-msg-text"></div>' +
+                '<div class="xl-msg-actions" style="display:none;"></div>' +
             '</div>';
         row.querySelector('.xl-msg-text').textContent = text;
+
+        if (opts.editable) {
+            const actions = row.querySelector('.xl-msg-actions');
+            actions.style.display = '';
+            const edit = document.createElement('button');
+            edit.className = 'act-edit';
+            edit.innerHTML = '<i class="fa-solid fa-pen"></i> Edit';
+            edit.onclick = () => enterEditMode(row, text);
+            actions.appendChild(edit);
+        }
         return row;
     }
 
-    function makeAssistantRow(text) {
+    function enterEditMode(row, originalText) {
+        const body = row.querySelector('.xl-msg-body');
+        if (body.querySelector('.xl-edit-wrap')) return;
+        const textEl = body.querySelector('.xl-msg-text');
+        const actions = body.querySelector('.xl-msg-actions');
+        textEl.style.display = 'none';
+        if (actions) actions.style.display = 'none';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'xl-edit-wrap';
+        const ta = document.createElement('textarea');
+        ta.className = 'xl-edit-box';
+        ta.value = originalText;
+        const btns = document.createElement('div');
+        btns.className = 'xl-edit-actions';
+        const cancel = document.createElement('button');
+        cancel.innerHTML = '<i class="fa-solid fa-xmark"></i> Cancel';
+        const save = document.createElement('button');
+        save.className = 'primary';
+        save.innerHTML = '<i class="fa-solid fa-check"></i> Save & resend';
+        btns.appendChild(cancel);
+        btns.appendChild(save);
+        wrap.appendChild(ta);
+        wrap.appendChild(btns);
+        body.appendChild(wrap);
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+
+        cancel.onclick = () => {
+            wrap.remove();
+            textEl.style.display = '';
+            if (actions) actions.style.display = '';
+        };
+        save.onclick = () => {
+            const newText = ta.value.trim();
+            if (!newText || newText === originalText) {
+                wrap.remove(); textEl.style.display = '';
+                if (actions) actions.style.display = '';
+                return;
+            }
+            const c = currentConversation();
+            const idx = c.messages.findIndex(m => m.role === 'user' && m.text === originalText);
+            if (idx >= 0) c.messages = c.messages.slice(0, idx);
+            persistActive();
+            renderChat();
+            sendPrompt(newText);
+        };
+    }
+
+    function makeAssistantRow(text, opts) {
+        opts = opts || {};
         const row = document.createElement('div');
         row.className = 'xl-msg assistant';
         row.dataset.raw = text || '';
@@ -293,9 +378,7 @@
             '</div>' +
             '<div class="xl-msg-body">' +
                 '<div class="xl-msg-text"></div>' +
-                '<div class="xl-msg-actions">' +
-                    '<button class="act-copy"><i class="fa-regular fa-copy"></i> Copy</button>' +
-                '</div>' +
+                '<div class="xl-msg-actions" style="display:none;"></div>' +
             '</div>';
 
         const textEl = row.querySelector('.xl-msg-text');
@@ -303,19 +386,6 @@
             if (mdEnabled()) renderMarkdownInto(textEl, text);
             else textEl.textContent = text;
         }
-
-        row.querySelector('.act-copy').onclick = (e) => {
-            e.stopPropagation();
-            copyText(row.dataset.raw || textEl.textContent);
-            const btn = e.currentTarget;
-            btn.classList.add('copied');
-            btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied';
-            toast('Reply copied');
-            setTimeout(() => {
-                btn.classList.remove('copied');
-                btn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy';
-            }, 1200);
-        };
 
         let lastTap = 0;
         textEl.addEventListener('touchend', () => {
@@ -327,6 +397,33 @@
             lastTap = now;
         });
 
+        const actions = row.querySelector('.xl-msg-actions');
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'act-copy';
+        copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy';
+        copyBtn.onclick = (e) => {
+            e.stopPropagation();
+            copyText(row.dataset.raw || textEl.textContent);
+            copyBtn.classList.add('copied');
+            copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied';
+            toast('Reply copied');
+            setTimeout(() => {
+                copyBtn.classList.remove('copied');
+                copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy';
+            }, 1200);
+        };
+        actions.appendChild(copyBtn);
+
+        if (opts.regenerable) {
+            const regen = document.createElement('button');
+            regen.className = 'act-regen';
+            regen.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Regenerate';
+            regen.onclick = (e) => {
+                e.stopPropagation();
+                regenerateLast();
+            };
+            actions.appendChild(regen);
+        }
         return row;
     }
 
@@ -346,8 +443,11 @@
         const c = currentConversation();
         if (!messages) return;
         if (!c.messages.length) {
-            const models = JSON.parse(window.Xenon.listModels());
-            const active = models.find(m => m.active && m.ready);
+            let active = null;
+            try {
+                const models = JSON.parse(window.Xenon.listModels());
+                active = models.find(m => m.active && m.ready);
+            } catch (_) {}
             showEmptyState(
                 active ? 'Ready when you are' : 'No model loaded',
                 active ? 'Ask Xenon anything — it runs entirely on your device.' : 'Open the Models tab to download one',
@@ -356,8 +456,19 @@
             return;
         }
         messages.innerHTML = '';
-        for (const m of c.messages) {
-            messages.appendChild(m.role === 'user' ? makeUserRow(m.text) : makeAssistantRow(m.text));
+        const n = c.messages.length;
+        for (let i = 0; i < n; i++) {
+            const m = c.messages[i];
+            const editable = (m.role === 'user')
+                && (i === n - 2)
+                && (n >= 2)
+                && (c.messages[n - 1].role === 'assistant');
+            const regenerable = (m.role === 'assistant') && (i === n - 1);
+
+            if (m.role === 'user')
+                messages.appendChild(makeUserRow(m.text, { editable }));
+            else
+                messages.appendChild(makeAssistantRow(m.text, { regenerable }));
         }
         scrollBottom();
     }
@@ -390,19 +501,9 @@
         });
     }
 
-    function sendPrompt(text) {
-        if (generating) return;
-        promptEl.value = ''; promptEl.style.height = 'auto';
-        if (sendBtn) sendBtn.disabled = true;
-
-        const empt = messages.querySelector('.xl-empty'); if (empt) empt.remove();
-        messages.appendChild(makeUserRow(text));
-        scrollBottom();
-
-        appendMessage('user', text);
-        persistActive();
-
-        const asstRow = makeAssistantRow('');
+    function streamAssistantReply(userText) {
+        if (!messages) return;
+        const asstRow = makeAssistantRow('', { regenerable: true });
         asstRow.classList.add('typing');
         asstRow.querySelector('.xl-msg-actions').style.display = 'none';
         const asstTextEl = asstRow.querySelector('.xl-msg-text');
@@ -410,6 +511,7 @@
         scrollBottom();
 
         generating = true;
+        if (sendBtn) sendBtn.disabled = true;
         setIsland('generating', 'Thinking…', '0 tok');
         setHeaderThinking(true);
         showThinkingInBubble(asstTextEl);
@@ -417,7 +519,7 @@
         const s = JSON.parse(window.Xenon.getSettings());
         const wrapped =
             '<|im_start|>system\n' + s.system + '<|im_end|>\n' +
-            '<|im_start|>user\n' + text + '<|im_end|>\n' +
+            '<|im_start|>user\n' + userText + '<|im_end|>\n' +
             '<|im_start|>assistant\n';
 
         const id = nextId++;
@@ -458,6 +560,7 @@
                 generating = false;
                 if (sendBtn) sendBtn.disabled = !promptEl.value.trim();
                 setIsland('ready', '', '');
+                renderChat();
             },
             onError: msg => {
                 clearThinkingInBubble(asstTextEl);
@@ -470,6 +573,7 @@
                 generating = false;
                 if (sendBtn) sendBtn.disabled = !promptEl.value.trim();
                 setIsland('error', 'Error', String(msg).slice(0, 24));
+                renderChat();
             }
         });
 
@@ -481,14 +585,46 @@
         }
     }
 
+    function sendPrompt(text) {
+        if (generating || !messages) return;
+        if (promptEl) { promptEl.value = ''; promptEl.style.height = 'auto'; }
+        if (sendBtn) sendBtn.disabled = true;
+
+        const empt = messages.querySelector('.xl-empty'); if (empt) empt.remove();
+        messages.appendChild(makeUserRow(text));
+        scrollBottom();
+
+        appendMessage('user', text);
+        persistActive();
+
+        streamAssistantReply(text);
+    }
+
+    function regenerateLast() {
+        if (generating) return;
+        const c = currentConversation();
+        if (!c.messages.length) return;
+        let lastUserIdx = -1;
+        for (let i = c.messages.length - 1; i >= 0; i--) {
+            if (c.messages[i].role === 'user') { lastUserIdx = i; break; }
+        }
+        if (lastUserIdx < 0) return;
+        const promptText = c.messages[lastUserIdx].text;
+        c.messages = c.messages.slice(0, lastUserIdx + 1);
+        persistActive();
+        renderChat();
+        streamAssistantReply(promptText);
+    }
+
     const composer = $('#composer');
     if (composer) composer.addEventListener('submit', e => {
         e.preventDefault();
-        const text = promptEl.value.trim();
+        const text = promptEl ? promptEl.value.trim() : '';
         if (!text) return;
         sendPrompt(text);
     });
 
+    /* ---------- models ---------- */
     async function loadModels() {
         const list = $('#modelList'); if (!list) return;
         let models;
@@ -559,12 +695,16 @@
     }
 
     async function reloadModel() {
-        const models = JSON.parse(window.Xenon.listModels());
+        let models;
+        try { models = JSON.parse(window.Xenon.listModels()); }
+        catch (_) { return; }
         const active = models.find(m => m.active && m.ready);
+
         const headerModel = $('#headerModel');
         if (headerModel) {
             headerModel.classList.remove('ready', 'busy');
-            headerModel.querySelector('span:last-child').textContent = active ? active.name : 'No model';
+            const span = headerModel.querySelector('span:last-child');
+            if (span) span.textContent = active ? active.name : 'No model';
             if (active) headerModel.classList.add('ready');
         }
         const sideModel = $('#sidebarModel');
@@ -584,6 +724,7 @@
         }, 40);
     }
 
+    /* ---------- settings ---------- */
     function bindRange(id, outId, fmt) {
         const el  = document.getElementById(id);
         const out = document.getElementById(outId);
@@ -611,20 +752,26 @@
             streaming: store.getItem('xenon.streaming') !== '0',
             markdown: store.getItem('xenon.md') !== '0'
         };
-        if ($('#sMax'))    $('#sMax').value    = s.maxTokens;
-        if ($('#sTemp'))   $('#sTemp').value   = Math.round(s.temperature * 100);
-        if ($('#sTopP'))   $('#sTopP').value   = Math.round(s.topP * 100);
-        if ($('#sTopK'))   $('#sTopK').value   = s.topK;
-        if ($('#sRep'))    $('#sRep').value    = Math.round(local.repeatPenalty * 100);
-        if ($('#sThreads'))$('#sThreads').value= local.threads;
-        if ($('#sCtx'))    $('#sCtx').value    = local.ctx;
-        if ($('#sSeed'))   $('#sSeed').value   = local.seed;
-        if ($('#sSystem')) $('#sSystem').value = s.system;
-        if ($('#swStream'))   $('#swStream').checked   = local.streaming;
-        if ($('#swMarkdown')) $('#swMarkdown').checked = local.markdown;
+        const setV = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        const setC = (id, v) => { const e = document.getElementById(id); if (e) e.checked = v; };
+
+        setV('sMax', s.maxTokens);
+        setV('sTemp', Math.round(s.temperature * 100));
+        setV('sTopP', Math.round(s.topP * 100));
+        setV('sTopK', s.topK);
+        setV('sRep', Math.round(local.repeatPenalty * 100));
+        setV('sThreads', local.threads);
+        setV('sCtx', local.ctx);
+        setV('sSeed', local.seed);
+        const sysEl = document.getElementById('sSystem');
+        if (sysEl) sysEl.value = s.system;
+        setC('swStream', local.streaming);
+        setC('swMarkdown', local.markdown);
+
         applyTheme(local.theme);
         $$('#themeSegment button').forEach(b =>
             b.classList.toggle('active', b.dataset.theme === local.theme));
+
         bindRange('sMax',  'oMax');
         bindRange('sTemp','oTemp', v => (v / 100).toFixed(2));
         bindRange('sTopP','oTopP', v => (v / 100).toFixed(2));
@@ -641,41 +788,47 @@
         applyTheme(b.dataset.theme);
         store.setItem('xenon.theme', b.dataset.theme);
     }));
+
     $$('.xl-chip').forEach(chip => chip.addEventListener('click', () => {
-        const ta = $('#sSystem'); if (ta) ta.value = chip.dataset.preset;
+        const ta = document.getElementById('sSystem');
+        if (ta) ta.value = chip.dataset.preset;
     }));
-    const swStream = $('#swStream');
+
+    const swStream = document.getElementById('swStream');
     if (swStream) swStream.addEventListener('change', e =>
         store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
-    const swMarkdown = $('#swMarkdown');
+
+    const swMarkdown = document.getElementById('swMarkdown');
     if (swMarkdown) swMarkdown.addEventListener('change', e => {
         store.setItem('xenon.md', e.target.checked ? '1' : '0');
         toast(e.target.checked ? 'Markdown on' : 'Markdown off');
     });
 
-    const saveBtn = $('#save');
+    const saveBtn = document.getElementById('save');
     if (saveBtn) saveBtn.onclick = () => {
         window.Xenon.saveSettings(
-            +$('#sMax').value, +$('#sTemp').value / 100,
-            +$('#sTopP').value / 100, +$('#sTopK').value,
-            $('#sSystem').value);
-        store.setItem('xenon.repeatPenalty', (+$('#sRep').value / 100).toFixed(2));
-        store.setItem('xenon.threads', String(+$('#sThreads').value));
-        store.setItem('xenon.ctx', String(+$('#sCtx').value));
-        store.setItem('xenon.seed', String(+$('#sSeed').value));
-        const m = $('#savedMsg');
+            +document.getElementById('sMax').value,
+            +document.getElementById('sTemp').value / 100,
+            +document.getElementById('sTopP').value / 100,
+            +document.getElementById('sTopK').value,
+            document.getElementById('sSystem').value);
+        store.setItem('xenon.repeatPenalty', (+document.getElementById('sRep').value / 100).toFixed(2));
+        store.setItem('xenon.threads', String(+document.getElementById('sThreads').value));
+        store.setItem('xenon.ctx', String(+document.getElementById('sCtx').value));
+        store.setItem('xenon.seed', String(+document.getElementById('sSeed').value));
+        const m = document.getElementById('savedMsg');
         if (m) { m.innerHTML = '<i class="fa-solid fa-check"></i> Saved'; setTimeout(() => m.textContent = '', 1500); }
         toast('Settings saved');
     };
 
-    const clearBtn = $('#clearHistory');
+    const clearBtn = document.getElementById('clearHistory');
     if (clearBtn) clearBtn.onclick = () => {
         if (!confirm('Delete all conversations? This cannot be undone.')) return;
         convs = []; activeId = null;
         store.removeItem(CONV_KEY); store.removeItem(ACTIVE_KEY);
         renderHistory(); renderChat();
     };
-    const resetBtn = $('#resetSettings');
+    const resetBtn = document.getElementById('resetSettings');
     if (resetBtn) resetBtn.onclick = () => {
         if (!confirm('Reset all settings to defaults?')) return;
         window.Xenon.saveSettings(DEFAULTS.maxTokens, DEFAULTS.temperature,
@@ -685,14 +838,17 @@
             .forEach(k => store.removeItem(k));
         loadSettings();
     };
-    const refreshBtn = $('#refreshModelsBtn');
+
+    const refreshBtn = document.getElementById('refreshModelsBtn');
     if (refreshBtn) refreshBtn.onclick = () => loadModels();
 
+    /* ---------- boot ---------- */
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }
         try { await loadModels(); } catch (e) { showError('models: ' + e); }
         try { renderHistory(); } catch (e) { showError('history: ' + e); }
         try { renderChat(); } catch (e) { showError('chat: ' + e); }
         try { await reloadModel(); } catch (e) { showError('reload: ' + e); }
+        console.log('[xenonlabs] boot complete');
     })();
 })();

@@ -98,12 +98,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Generate Gradle wrapper
-        working-directory: android
-        run: gradle wrapper --gradle-version 8.9
-
       - name: Build debug APK
         working-directory: android
+        timeout-minutes: 10
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK

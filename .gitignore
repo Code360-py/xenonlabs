@@ -17,9 +17,6 @@ android/app/build/
 android/local.properties
 android/app/src/main/jni/llama_include/*.h
 !android/app/src/main/jni/llama_include/xenonlabs.h
-android/gradlew
-android/gradlew.bat
-android/gradle/
 
 # Editors
 .vscode/

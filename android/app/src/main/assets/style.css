@@ -967,3 +967,101 @@ body.xl-app {
     flex-shrink: 0;
 }
 .xl-import-progress[hidden] { display: none; }
+
+/* ============================================================
+   Update banner
+   ============================================================ */
+
+.xl-update-banner {
+    position: fixed;
+    top: calc(var(--safe-top) + var(--island-h) + 16px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 10px 10px 14px;
+    background: linear-gradient(135deg, var(--accent), #6b83ff);
+    color: #fff;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.3;
+    box-shadow: 0 8px 24px rgba(77,107,254,.45),
+                0 0 0 .5px rgba(255,255,255,.15);
+    z-index: 1500;
+    max-width: calc(100vw - 24px);
+    animation: updateIn .3s cubic-bezier(.2,.9,.3,1);
+}
+@keyframes updateIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.xl-update-banner > i {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.xl-update-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+.xl-update-text strong {
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.xl-update-text span {
+    font-size: 11.5px;
+    opacity: .85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.xl-update-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,.22);
+    border: none;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 9px;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .15s, transform .12s;
+}
+.xl-update-open:active {
+    background: rgba(255,255,255,.34);
+    transform: scale(.96);
+}
+.xl-update-close {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,.8);
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    transition: background .15s, color .15s;
+}
+.xl-update-close:active {
+    background: rgba(255,255,255,.18);
+    color: #fff;
+}
+
+@media (max-width: 360px) {
+    .xl-update-banner {
+        gap: 8px;
+        padding: 9px 8px 9px 12px;
+    }
+    .xl-update-open { padding: 7px 10px; font-size: 12px; }
+    .xl-update-open i { display: none; }
+}

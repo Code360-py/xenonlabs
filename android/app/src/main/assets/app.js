@@ -958,6 +958,96 @@
         }
     };
 
+    /* ============================================================
+       In-app update check (GitHub Releases)
+       ============================================================ */
+
+    const APP_VERSION   = '1.0.0';
+    const RELEASES_URL  = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
+    const DISMISS_KEY   = 'xenon.updateDismissedFor';
+
+    /* Returns true if `remote` is a strictly higher semver than `local`. */
+    function versionNewer(remote, local) {
+        const a = String(remote).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+        const b = String(local).split('.').map(n => parseInt(n, 10) || 0);
+        for (let i = 0; i < 3; i++) {
+            const x = a[i] || 0, y = b[i] || 0;
+            if (x > y) return true;
+            if (x < y) return false;
+        }
+        return false;
+    }
+
+    function removeUpdateBanner() {
+        const el = document.getElementById('xlUpdateBanner');
+        if (el) el.remove();
+    }
+
+    function showUpdateBanner(remoteVersion, apkUrl, notesUrl) {
+        removeUpdateBanner();
+
+        const banner = document.createElement('div');
+        banner.id = 'xlUpdateBanner';
+        banner.className = 'xl-update-banner';
+        banner.innerHTML =
+            '<i class="fa-solid fa-arrow-up-right-dots"></i>' +
+            '<div class="xl-update-text">' +
+                '<strong>Update available</strong>' +
+                '<span>v' + escapeHtml(remoteVersion) + ' &middot; tap Download to install</span>' +
+            '</div>' +
+            '<button type="button" class="xl-update-open">' +
+                '<i class="fa-solid fa-download"></i> Download' +
+            '</button>' +
+            '<button type="button" class="xl-update-close" aria-label="Dismiss">' +
+                '<i class="fa-solid fa-xmark"></i>' +
+            '</button>';
+
+        banner.querySelector('.xl-update-open').onclick = () => {
+            try {
+                /* Opening a direct APK URL triggers the browser / download manager */
+                window.location.href = apkUrl;
+            } catch (e) {
+                toast('Cannot open download');
+            }
+        };
+
+        banner.querySelector('.xl-update-close').onclick = () => {
+            store.setItem(DISMISS_KEY, APP_VERSION);
+            banner.remove();
+        };
+
+        document.body.appendChild(banner);
+    }
+
+    async function checkForUpdates() {
+        /* Don't nag the user twice for the same installed version */
+        if (store.getItem(DISMISS_KEY) === APP_VERSION) return;
+
+        let r;
+        try {
+            r = await fetch(RELEASES_URL, {
+                headers: { 'Accept': 'application/vnd.github+json' },
+                cache: 'no-store',
+            });
+        } catch (_) {
+            return; /* offline or blocked — silent */
+        }
+        if (!r.ok) return;
+
+        let j;
+        try { j = await r.json(); } catch (_) { return; }
+
+        const tag = (j && j.tag_name) ? j.tag_name : '';
+        const remote = tag.replace(/^v/, '');
+        if (!remote || !versionNewer(remote, APP_VERSION)) return;
+
+        /* Find the first .apk asset in the release */
+        const apk = (j.assets || []).find(a => a.name && a.name.toLowerCase().endsWith('.apk'));
+        if (!apk || !apk.browser_download_url) return;
+
+        showUpdateBanner(remote, apk.browser_download_url, j.html_url || RELEASES_URL);
+    }
+
     /* ---------- boot ---------- */
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }
@@ -966,5 +1056,6 @@
         try { renderChat(); } catch (e) { showError('chat: ' + e); }
         try { await reloadModel(); } catch (e) { showError('reload: ' + e); }
         console.log('[xenonlabs] boot complete');
+        setTimeout(() => { try { checkForUpdates(); } catch (e) {} }, 1200);
     })();
 })();

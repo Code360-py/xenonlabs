@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>XenonLabs</title>
+
+<link rel="stylesheet" href="vendor/bootstrap.min.css">
+<link rel="stylesheet" href="vendor/bootstrap-icons.css">
+<link rel="stylesheet" href="vendor/fontawesome.min.css">
+<link rel="stylesheet" href="vendor/inter.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="xl-app">
+
+<!-- ============ Dynamic Island ============ -->
+<div id="island" class="xl-island">
+    <div class="xl-island-inner">
+        <span id="islandIcon" class="xl-island-icon"></span>
+        <span id="islandText" class="xl-island-text">XenonLabs</span>
+        <span id="islandStatus" class="xl-island-status"></span>
+    </div>
+</div>
+
+<main id="views" class="xl-views">
+
+    <!-- CHAT -->
+    <section id="view-chat" class="xl-view active">
+        <div id="messages" class="xl-messages"></div>
+        <div class="xl-composer-wrap">
+            <form id="composer" class="xl-composer" autocomplete="off">
+                <button type="button" id="sidebarBtn" class="xl-icon-btn" aria-label="Menu">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <textarea id="prompt" rows="1" placeholder="Message" aria-label="Message"></textarea>
+                <button id="send" type="submit" class="xl-send-btn" aria-label="Send">
+                    <i class="fa-solid fa-arrow-up"></i>
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <!-- MODELS -->
+    <section id="view-models" class="xl-view">
+        <div class="xl-scroll">
+            <h6 class="xl-section">Models</h6>
+            <div id="modelList" class="xl-model-list"></div>
+        </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="xl-view">
+        <div class="xl-scroll">
+            <h6 class="xl-section">Generation</h6>
+            <div class="xl-card">
+                <div class="xl-row"><span>Max tokens</span><output id="oMax">256</output></div>
+                <input type="range" id="sMax" min="32" max="1024" step="32" value="256" class="form-range">
+
+                <div class="xl-row"><span>Temperature</span><output id="oTemp">0.70</output></div>
+                <input type="range" id="sTemp" min="0" max="150" step="1" value="70" class="form-range">
+
+                <div class="xl-row"><span>Top-p</span><output id="oTopP">0.95</output></div>
+                <input type="range" id="sTopP" min="1" max="100" step="1" value="95" class="form-range">
+
+                <div class="xl-row"><span>Top-k</span><output id="oTopK">40</output></div>
+                <input type="range" id="sTopK" min="0" max="100" step="1" value="40" class="form-range">
+            </div>
+
+            <h6 class="xl-section">System prompt</h6>
+            <div class="xl-card">
+                <textarea id="sSystem" rows="4" class="form-control xl-textarea">You are a helpful assistant.</textarea>
+            </div>
+
+            <button id="save" class="btn btn-primary w-100 xl-save">
+                <i class="fa-solid fa-floppy-disk me-1"></i> Save
+            </button>
+            <div id="savedMsg" class="xl-hint"></div>
+            <div class="xl-footer-space"></div>
+        </div>
+    </section>
+
+</main>
+
+<!-- ============ Sidebar scrim + drawer ============ -->
+<div id="sidebarScrim" class="xl-scrim" hidden></div>
+
+<aside id="sidebar" class="xl-sidebar" hidden>
+    <div class="xl-sidebar-head">
+        <div class="xl-avatar">X</div>
+        <div class="xl-sidebar-name">XenonLabs</div>
+        <div class="xl-sidebar-sub">Local LLM on device</div>
+    </div>
+    <nav class="xl-sidebar-nav">
+        <button class="xl-sidebar-item" data-nav="chat">
+            <i class="fa-solid fa-comment"></i><span>Chat</span>
+        </button>
+        <button class="xl-sidebar-item" data-nav="models">
+            <i class="fa-solid fa-cube"></i><span>Models</span>
+        </button>
+        <button class="xl-sidebar-item" data-nav="settings">
+            <i class="fa-solid fa-sliders"></i><span>Settings</span>
+        </button>
+    </nav>
+    <div class="xl-sidebar-foot">
+        <div id="sidebarModel" class="xl-sidebar-model">No model loaded</div>
+    </div>
+</aside>
+
+<!-- ============ Bottom tab bar ============ -->
+<nav class="xl-tabbar">
+    <div class="xl-tabbar-inner">
+        <button data-tab="chat" class="xl-tab active">
+            <i class="fa-solid fa-comment"></i><span>Chat</span>
+        </button>
+        <button data-tab="models" class="xl-tab">
+            <i class="fa-solid fa-cube"></i><span>Models</span>
+        </button>
+        <button data-tab="settings" class="xl-tab">
+            <i class="fa-solid fa-sliders"></i><span>Settings</span>
+        </button>
+    </div>
+</nav>
+
+<script src="vendor/bootstrap.bundle.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

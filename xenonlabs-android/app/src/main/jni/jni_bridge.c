@@ -17,6 +17,8 @@ Java_com_xenonlabs_app_MainActivity_nativeInit(JNIEnv *env, jobject thiz,
 
     xenon_config_t cfg = xenon_default_config();
     cfg.model_path = path;
+    cfg.n_ctx      = 2048;
+    cfg.n_threads  = 4;
 
     xenon_status_t st = xenon_model_load(&cfg, &g_model);
     (*env)->ReleaseStringUTFChars(env, jmodelPath, path);
@@ -36,12 +38,26 @@ Java_com_xenonlabs_app_MainActivity_nativeGenerate(JNIEnv *env, jobject thiz,
     const char *prompt = (*env)->GetStringUTFChars(env, jprompt, NULL);
     if (!prompt) return NULL;
 
+    const char *pre  = "<|im_start|>user\n";
+    const char *post = "<|im_end|>\n<|im_start|>assistant\n";
+
+    size_t n = strlen(pre) + strlen(prompt) + strlen(post) + 1;
+    char *full = (char *)malloc(n);
+    if (!full) {
+        (*env)->ReleaseStringUTFChars(env, jprompt, prompt);
+        return (*env)->NewStringUTF(env, "error: oom");
+    }
+    snprintf(full, n, "%s%s%s", pre, prompt, post);
+
+    (*env)->ReleaseStringUTFChars(env, jprompt, prompt);
+
     xenon_gen_params_t gp = xenon_default_gen_params();
-    gp.max_tokens = (int)maxTokens;
+    gp.max_tokens  = (int)maxTokens;
+    gp.temperature = 0.7f;
 
     char *out = NULL;
-    xenon_status_t st = xenon_generate(g_ctx, prompt, &gp, &out);
-    (*env)->ReleaseStringUTFChars(env, jprompt, prompt);
+    xenon_status_t st = xenon_generate(g_ctx, full, &gp, &out);
+    free(full);
 
     if (st != XENON_OK) return (*env)->NewStringUTF(env, "error: generation failed");
 

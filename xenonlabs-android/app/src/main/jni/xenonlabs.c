@@ -1,7 +1,3 @@
-/*
- * XenonLabs — library implementation over llama.cpp.
- * All llama.cpp output is silenced unless XENONLABS_VERBOSE=1.
- */
 #define XENONLABS_BUILD
 #include "xenonlabs.h"
 
@@ -12,9 +8,6 @@
 #include <llama.h>
 #include <ggml.h>
 
-/* ------------------------------------------------------------------ */
-/* Opaque handles                                                      */
-/* ------------------------------------------------------------------ */
 struct xenon_model {
     struct llama_model *model;
     char               *path;
@@ -28,9 +21,6 @@ struct xenon_context {
     int                       n_threads;
 };
 
-/* ------------------------------------------------------------------ */
-/* Small helpers                                                       */
-/* ------------------------------------------------------------------ */
 static char *xstrdup(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s) + 1;
@@ -50,7 +40,6 @@ static void silent_log_cb(enum ggml_log_level level,
     (void)level; (void)text; (void)user;
 }
 
-/* Dynamic string buffer */
 typedef struct { char *buf; size_t len; size_t cap; } xbuf_t;
 
 static int xbuf_append(xbuf_t *b, const char *s) {
@@ -69,9 +58,6 @@ static int xbuf_append(xbuf_t *b, const char *s) {
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* Version + defaults                                                  */
-/* ------------------------------------------------------------------ */
 const char *xenon_version(void) {
     static char buf[32];
     snprintf(buf, sizeof buf, "%d.%d.%d",
@@ -97,13 +83,9 @@ xenon_gen_params_t xenon_default_gen_params(void) {
     p.top_p          = 0.95f;
     p.top_k          = 40;
     p.repeat_penalty = 1.1f;
-    p.stop           = NULL;
     return p;
 }
 
-/* ------------------------------------------------------------------ */
-/* Lifecycle                                                           */
-/* ------------------------------------------------------------------ */
 xenon_status_t xenon_init(void) {
     if (!env_truthy("XENONLABS_VERBOSE")) {
         ggml_log_set(silent_log_cb, NULL);
@@ -117,9 +99,6 @@ void xenon_shutdown(void) {
     llama_backend_free();
 }
 
-/* ------------------------------------------------------------------ */
-/* Model                                                               */
-/* ------------------------------------------------------------------ */
 xenon_status_t xenon_model_load(const xenon_config_t *cfg,
                                 xenon_model_t **out_model) {
     if (!cfg || !cfg->model_path || !out_model) return XENON_ERR_ARG;
@@ -148,9 +127,6 @@ void xenon_model_free(xenon_model_t *m) {
     free(m);
 }
 
-/* ------------------------------------------------------------------ */
-/* Context                                                             */
-/* ------------------------------------------------------------------ */
 xenon_status_t xenon_context_create(xenon_model_t *model,
                                     xenon_context_t **out_ctx) {
     if (!model || !out_ctx) return XENON_ERR_ARG;
@@ -180,9 +156,6 @@ void xenon_context_free(xenon_context_t *c) {
     free(c);
 }
 
-/* ------------------------------------------------------------------ */
-/* Batch helpers                                                       */
-/* ------------------------------------------------------------------ */
 static struct llama_batch make_batch(const llama_token *toks, int n, int pos0) {
     struct llama_batch b = llama_batch_init(n, 0, 1);
     for (int i = 0; i < n; ++i) {
@@ -196,7 +169,6 @@ static struct llama_batch make_batch(const llama_token *toks, int n, int pos0) {
     return b;
 }
 
-/* Recreate the llama_context to clear KV state. */
 static int reset_context(xenon_context_t *c) {
     struct llama_context_params cp = llama_context_default_params();
     cp.n_ctx     = (uint32_t)c->parent->n_ctx;
@@ -211,9 +183,6 @@ static int reset_context(xenon_context_t *c) {
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* Core generation loop                                                */
-/* ------------------------------------------------------------------ */
 static int xenon_run(xenon_context_t *c, const char *prompt,
                      const xenon_gen_params_t *p,
                      xenon_token_cb cb, void *ud) {
@@ -224,7 +193,6 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
 
     if (reset_context(c) != 0) return -5;
 
-    /* --- tokenize prompt --- */
     int n_prompt = -llama_tokenize(vocab, prompt, (int)strlen(prompt),
                                    NULL, 0, true, true);
     if (n_prompt <= 0) return -1;
@@ -237,7 +205,6 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
         free(toks); return -3;
     }
 
-    /* --- sampler chain --- */
     struct llama_sampler *smpl = llama_sampler_chain_init(
         llama_sampler_chain_default_params());
 
@@ -255,7 +222,6 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
     llama_sampler_chain_add(smpl,
         llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    /* --- decode prompt at positions 0..N-1 --- */
     int n_past = 0;
     struct llama_batch pb = make_batch(toks, n_prompt, n_past);
     int rc = llama_decode(c->ctx, pb);
@@ -264,13 +230,18 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
     if (rc != 0) { llama_sampler_free(smpl); return -4; }
     n_past += n_prompt;
 
-    /* --- generation --- */
     char piece[256];
     int  n_gen = 0;
 
+    llama_token eos = llama_vocab_eos(vocab);
+    llama_token bos = llama_vocab_bos(vocab);
+
     while (n_gen < p->max_tokens) {
         llama_token id = llama_sampler_sample(smpl, c->ctx, -1);
+
         if (llama_vocab_is_eog(vocab, id)) break;
+        if (id == eos) break;
+        if (id == bos && n_gen > 0) break;
 
         int n = llama_token_to_piece(vocab, id, piece,
                                      (int)sizeof(piece) - 1, 0, true);
@@ -293,9 +264,6 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* Public inference API                                                */
-/* ------------------------------------------------------------------ */
 xenon_status_t xenon_generate(xenon_context_t *ctx,
                               const char *prompt,
                               const xenon_gen_params_t *params,
@@ -325,9 +293,6 @@ xenon_status_t xenon_generate_stream(xenon_context_t *ctx,
     return rc == 0 ? XENON_OK : XENON_ERR_RUNTIME;
 }
 
-/* ------------------------------------------------------------------ */
-/* Utility                                                             */
-/* ------------------------------------------------------------------ */
 void xenon_free_string(char *s) { free(s); }
 
 const char *xenon_status_str(xenon_status_t s) {

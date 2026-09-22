@@ -32,11 +32,11 @@ jobs:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
-      - name: Cache llama.cpp
+      - name: Cache llama.cpp build
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-android-arm64-v6
+          key: llama-cpp-android-arm64-v7
 
       - name: Clone llama.cpp
         run: |
@@ -69,22 +69,40 @@ jobs:
         run: |
           DEST=xenonlabs-android/app/src/main/jniLibs/arm64-v8a
           mkdir -p $DEST
+
+          # llama.cpp build outputs
           cp llama.cpp/build-android/bin/libllama.so     $DEST/
           cp llama.cpp/build-android/bin/libggml.so      $DEST/
           cp llama.cpp/build-android/bin/libggml-base.so $DEST/
           cp llama.cpp/build-android/bin/libggml-cpu.so  $DEST/
-          # libc++_shared.so from the NDK (required by libllama.so at runtime)
+
+          # libc++_shared.so required by libllama.so at runtime
           find $ANDROID_NDK_HOME -name 'libc++_shared.so' -path '*aarch64*' \
                -exec cp {} $DEST/ \; || true
+
           ls -lh $DEST/
 
       - name: Copy llama headers
         run: |
           DEST=xenonlabs-android/app/src/main/jni/llama_include
           mkdir -p $DEST
-          cp llama.cpp/include/llama.h $DEST/
+
+          # Top-level public headers
+          cp llama.cpp/include/llama.h     $DEST/
+          cp llama.cpp/include/llama-cpp.h $DEST/ 2>/dev/null || true
+
+          # gguf.h lives in ggml/include — copy explicitly (name does NOT match 'ggml*.h' glob)
+          cp llama.cpp/ggml/include/gguf.h $DEST/ 2>/dev/null || true
+
+          # Every ggml header (public + shared internals that llama.h may need)
           find llama.cpp/ggml -name 'ggml*.h' -exec cp {} $DEST/ \;
-          ls -lh $DEST/ | head
+
+          # Make sure the essential ones are present
+          test -f $DEST/llama.h
+          test -f $DEST/ggml.h
+          test -f $DEST/gguf.h
+
+          ls -lh $DEST/ | head -30
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3

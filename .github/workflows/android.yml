@@ -1,0 +1,104 @@
+name: android-apk
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0 ndk;26.1.10909125 cmake;3.22.1'
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+
+      - name: Cache llama.cpp
+        uses: actions/cache@v4
+        with:
+          path: llama.cpp
+          key: llama-cpp-android-arm64-v11
+
+      - name: Clone llama.cpp
+        run: |
+          if [ ! -d llama.cpp ]; then
+            git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          fi
+
+      - name: Configure llama.cpp
+        run: |
+          cd llama.cpp
+          cmake -S . -B build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_CURL=OFF \
+            -DGGML_OPENMP=OFF
+
+      - name: Build libllama.so only
+        run: |
+          cd llama.cpp
+          cmake --build build-android --target llama -j
+
+      - name: Copy native libs
+        run: |
+          DEST=android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p $DEST
+          cp llama.cpp/build-android/bin/libllama.so     $DEST/
+          cp llama.cpp/build-android/bin/libggml.so      $DEST/
+          cp llama.cpp/build-android/bin/libggml-base.so $DEST/
+          cp llama.cpp/build-android/bin/libggml-cpu.so  $DEST/
+          ls -lh $DEST/
+
+      - name: Copy llama headers
+        run: |
+          DEST=android/app/src/main/jni/llama_include
+          mkdir -p $DEST
+          cp llama.cpp/include/llama.h     $DEST/ 2>/dev/null || true
+          cp llama.cpp/include/llama-cpp.h $DEST/ 2>/dev/null || true
+          cp llama.cpp/ggml/include/gguf.h $DEST/ 2>/dev/null || true
+          find llama.cpp/ggml -name 'ggml*.h' -exec cp {} $DEST/ \;
+          ls $DEST/ | head
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version 8.9
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xenonlabs-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30

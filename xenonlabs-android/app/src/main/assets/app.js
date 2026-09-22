@@ -1,5 +1,5 @@
 /* ============================================================
-   XenonLabs web UI  —  streaming + tabs + models + settings
+   XenonLabs — iPhone UI logic
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -7,30 +7,69 @@ const $$ = s => document.querySelectorAll(s);
 
 /* ---------------- tabs ---------------- */
 
-$$('.tab').forEach(btn => btn.addEventListener('click', () => {
-    $$('.tab').forEach(b => b.classList.remove('active'));
-    $$('.view').forEach(v => v.classList.remove('active'));
-    btn.classList.add('active');
-    $('#view-' + btn.dataset.tab).classList.add('active');
+function activateTab(name) {
+    $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+}
+$$('.tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+
+/* ---------------- sidebar ---------------- */
+
+const sidebar = $('#sidebar');
+const scrim   = $('#sidebarScrim');
+
+function openSidebar() {
+    scrim.hidden = false;
+    sidebar.hidden = false;
+    sidebar.classList.remove('closing');
+    scrim.classList.remove('closing');
+}
+function closeSidebar() {
+    sidebar.classList.add('closing');
+    scrim.classList.add('closing');
+    setTimeout(() => {
+        sidebar.hidden = true;
+        scrim.hidden = true;
+        sidebar.classList.remove('closing');
+        scrim.classList.remove('closing');
+    }, 220);
+}
+$('#sidebarBtn').onclick = openSidebar;
+scrim.onclick = closeSidebar;
+$$('.sidebar-item').forEach(b => b.addEventListener('click', () => {
+    activateTab(b.dataset.nav);
+    closeSidebar();
 }));
+
+/* ---------------- island ---------------- */
+
+const island     = $('#island');
+const islandText = $('#islandText');
+const islandStat = $('#islandStatus');
+
+function setIsland(state, text, status) {
+    island.classList.remove('ready','generating','error','expanded');
+    if (state) island.classList.add(state);
+    islandText.textContent = text || 'XenonLabs';
+    islandStat.textContent = status || '';
+    island.classList.toggle('expanded', Boolean(status));
+}
 
 /* ---------------- streaming dispatcher ---------------- */
 
 let nextCallbackId = 1;
-const streams = new Map();   // id -> { onToken, onDone, onError }
+const streams = new Map();
 
 window.__xenonToken = (id, piece) => {
     const s = streams.get(id);
     if (s && s.onToken) s.onToken(piece);
 };
 window.__xenonDone = (id) => {
-    const s = streams.get(id);
-    streams.delete(id);
+    const s = streams.get(id); streams.delete(id);
     if (s && s.onDone) s.onDone();
 };
 window.__xenonError = (id, msg) => {
-    const s = streams.get(id);
-    streams.delete(id);
+    const s = streams.get(id); streams.delete(id);
     if (s && s.onError) s.onError(msg);
 };
 
@@ -70,13 +109,10 @@ function scrollBottom() {
     requestAnimationFrame(() => messages.scrollTop = messages.scrollHeight);
 }
 
-/* textarea auto-grow */
 promptEl.addEventListener('input', () => {
     promptEl.style.height = 'auto';
     promptEl.style.height = Math.min(promptEl.scrollHeight, 130) + 'px';
 });
-
-/* enter to send */
 promptEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -97,6 +133,7 @@ $('#composer').addEventListener('submit', e => {
     const asst = addBubble('assistant typing', '');
     generating = true;
     sendBtn.disabled = true;
+    setIsland('generating', 'Thinking…', '0 tok');
 
     const s = JSON.parse(window.Xenon.getSettings());
     const wrapped =
@@ -106,28 +143,33 @@ $('#composer').addEventListener('submit', e => {
 
     const id = nextCallbackId++;
     let acc = '';
+    let tokens = 0;
 
     streams.set(id, {
         onToken: piece => {
             acc += piece;
+            tokens++;
             asst.textContent = acc;
             scrollBottom();
+            setIsland('generating', 'Generating…', tokens + ' tok');
         },
         onDone: () => {
             asst.classList.remove('typing');
             if (!acc) asst.textContent = '[no output]';
             generating = false;
             sendBtn.disabled = false;
+            const active = JSON.parse(window.Xenon.listModels()).find(m => m.active);
+            setIsland('ready', active ? active.name : 'Ready', '');
         },
         onError: msg => {
             asst.classList.remove('typing');
             asst.textContent = '[error: ' + msg + ']';
             generating = false;
             sendBtn.disabled = false;
+            setIsland('error', 'Error', msg.slice(0, 24));
         }
     });
 
-    /* fire and forget */
     window.Xenon.generateStream(
         wrapped,
         s.maxTokens | 0,
@@ -187,7 +229,6 @@ async function loadModels() {
             use.onclick = async () => {
                 window.Xenon.setActiveModel(m.filename);
                 await loadModels();
-                refreshPill();
                 await reloadModel();
             };
             actions.appendChild(use);
@@ -205,32 +246,34 @@ async function loadModels() {
     }
 }
 
-function refreshPill() {
-    const models = JSON.parse(window.Xenon.listModels());
-    const active = models.find(m => m.active);
-    const pill = $('#modelPill');
-    if (active) {
-        pill.hidden = false;
-        pill.textContent = active.name;
-    } else {
-        pill.hidden = true;
-    }
-}
-
 async function reloadModel() {
     const models = JSON.parse(window.Xenon.listModels());
     const active = models.find(m => m.active && m.ready);
+
+    /* update sidebar */
+    $('#sidebarModel').textContent = active
+        ? 'Loaded: ' + active.name
+        : 'No model loaded';
+
     messages.innerHTML = '';
     if (!active) {
         addBubble('system', 'Pick a model in the Models tab');
+        setIsland(null, 'XenonLabs', 'No model');
         return;
     }
     addBubble('system', 'Loading ' + active.name + '…');
+    setIsland('generating', 'Loading…', '');
+
     const path = window.Xenon.modelPath(active.filename);
     setTimeout(() => {
         const rc = window.Xenon.loadModel(path);
-        if (rc === 0) addBubble('system', 'Ready');
-        else          addBubble('system', 'Failed to load model (' + rc + ')');
+        if (rc === 0) {
+            addBubble('system', 'Ready');
+            setIsland('ready', active.name, '');
+        } else {
+            addBubble('system', 'Failed to load model (' + rc + ')');
+            setIsland('error', 'Load failed', 'code ' + rc);
+        }
     }, 40);
 }
 
@@ -243,7 +286,6 @@ function bindRange(id, outId, fmt) {
     el.addEventListener('input', update);
     update();
 }
-
 function loadSettings() {
     const s = JSON.parse(window.Xenon.getSettings());
     $('#sMax').value    = s.maxTokens;
@@ -251,13 +293,11 @@ function loadSettings() {
     $('#sTopP').value   = Math.round(s.topP * 100);
     $('#sTopK').value   = s.topK;
     $('#sSystem').value = s.system;
-
     bindRange('sMax',  'oMax');
     bindRange('sTemp','oTemp', v => (v / 100).toFixed(2));
     bindRange('sTopP','oTopP', v => (v / 100).toFixed(2));
     bindRange('sTopK','oTopK');
 }
-
 $('#save').onclick = () => {
     window.Xenon.saveSettings(
         +$('#sMax').value,
@@ -274,6 +314,5 @@ $('#save').onclick = () => {
 (async function boot() {
     loadSettings();
     await loadModels();
-    refreshPill();
     await reloadModel();
 })();

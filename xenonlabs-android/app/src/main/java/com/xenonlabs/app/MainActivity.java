@@ -1,9 +1,13 @@
 package com.xenonlabs.app;
 
 import android.annotation.SuppressLint;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -12,6 +16,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.WindowCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,16 +45,11 @@ public class MainActivity extends AppCompatActivity {
     public void setCallbackId(long id) { currentCallbackId = id; }
 
     @JavascriptInterface
-    public int loadModel(String path) {
-        return nativeInit(path);
-    }
+    public int loadModel(String path) { return nativeInit(path); }
 
     @JavascriptInterface
     public void shutdown() { nativeShutdown(); }
 
-    /**
-     * Fire-and-forget: return immediately, stream tokens from a worker thread.
-     */
     @JavascriptInterface
     public void generateStream(final String prompt, final int maxTokens,
                                final float temperature, final float topP,
@@ -67,19 +67,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void deliverToken(long id, String piece) {
-        String js = "window.__xenonToken && window.__xenonToken(" + id + ", "
-                  + JSONObject.quote(piece) + ");";
-        ui.post(() -> web.evaluateJavascript(js, null));
+        eval("window.__xenonToken && window.__xenonToken(" + id + "," + JSONObject.quote(piece) + ");");
     }
     private void deliverError(long id, String msg) {
-        String js = "window.__xenonError && window.__xenonError(" + id + ", "
-                  + JSONObject.quote(msg == null ? "error" : msg) + ");";
-        ui.post(() -> web.evaluateJavascript(js, null));
+        eval("window.__xenonError && window.__xenonError(" + id + "," + JSONObject.quote(msg == null ? "error" : msg) + ");");
     }
     private void deliverDone(long id) {
-        String js = "window.__xenonDone && window.__xenonDone(" + id + ");";
-        ui.post(() -> web.evaluateJavascript(js, null));
+        eval("window.__xenonDone && window.__xenonDone(" + id + ");");
     }
+    private void eval(String js) { ui.post(() -> web.evaluateJavascript(js, null)); }
 
     @JavascriptInterface
     public String listModels() {
@@ -104,13 +100,9 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) { return "[]"; }
     }
 
-    @JavascriptInterface
-    public void setActiveModel(String filename) { AppState.setActiveModel(this, filename); }
-
-    @JavascriptInterface
-    public boolean deleteModel(String filename) {
-        return new File(getFilesDir(), filename).delete();
-    }
+    @JavascriptInterface public void setActiveModel(String filename) { AppState.setActiveModel(this, filename); }
+    @JavascriptInterface public boolean deleteModel(String filename)  { return new File(getFilesDir(), filename).delete(); }
+    @JavascriptInterface public String modelPath(String filename)     { return new File(getFilesDir(), filename).getAbsolutePath(); }
 
     @JavascriptInterface
     public String getSettings() {
@@ -126,16 +118,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @JavascriptInterface
-    public void saveSettings(int maxTok, float temp, float topP, int topK, String sys) {
-        AppState.save(this, maxTok, temp, topP, topK, sys);
+    public void saveSettings(int m, float t, float tp, int tk, String sys) {
+        AppState.save(this, m, t, tp, tk, sys);
     }
-
-    @JavascriptInterface
-    public String modelPath(String filename) {
-        return new File(getFilesDir(), filename).getAbsolutePath();
-    }
-
-    /* ---------- downloads ---------- */
 
     @JavascriptInterface
     public void downloadModel(String url, String filename, long dlId) {
@@ -149,18 +134,14 @@ public class MainActivity extends AppCompatActivity {
             c.setInstanceFollowRedirects(true);
             c.connect();
             if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
-
-            long total = c.getContentLengthLong();
-            long done = 0;
+            long total = c.getContentLengthLong(), done = 0;
             File tmp = new File(getFilesDir(), filename + ".part");
             byte[] buf = new byte[1 << 16];
-
             try (java.io.InputStream in = c.getInputStream();
                  java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
                 int n; long last = 0;
                 while ((n = in.read(buf)) > 0) {
-                    out.write(buf, 0, n);
-                    done += n;
+                    out.write(buf, 0, n); done += n;
                     long now = System.currentTimeMillis();
                     if (now - last > 300) {
                         last = now;
@@ -171,21 +152,16 @@ public class MainActivity extends AppCompatActivity {
             }
             tmp.renameTo(new File(getFilesDir(), filename));
             notifyDownload(dlId, 100, done, total, true);
-        } catch (Exception e) {
-            notifyDownloadError(dlId, e.getMessage());
-        }
+        } catch (Exception e) { notifyDownloadError(dlId, e.getMessage()); }
     }
 
     private void notifyDownload(long id, int pct, long done, long total, boolean finished) {
-        String js = "window.__xenonDownload && window.__xenonDownload(" + id + "," + pct
-                  + "," + done + "," + total + "," + finished + ");";
-        ui.post(() -> web.evaluateJavascript(js, null));
+        eval("window.__xenonDownload && window.__xenonDownload(" + id + "," + pct
+             + "," + done + "," + total + "," + finished + ");");
     }
-
     private void notifyDownloadError(long id, String msg) {
-        String js = "window.__xenonDownloadError && window.__xenonDownloadError(" + id + ","
-                  + JSONObject.quote(msg == null ? "error" : msg) + ");";
-        ui.post(() -> web.evaluateJavascript(js, null));
+        eval("window.__xenonDownloadError && window.__xenonDownloadError(" + id + ","
+             + JSONObject.quote(msg == null ? "error" : msg) + ");");
     }
 
     /* ---------- activity ---------- */
@@ -194,6 +170,26 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+
+        /* full-screen edge-to-edge, hide system bars */
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController c = getWindow().getInsetsController();
+            if (c != null) {
+                c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                c.setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+              | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+              | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+              | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+              | View.SYSTEM_UI_FLAG_FULLSCREEN
+              | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+
         setContentView(R.layout.activity_main);
 
         web = findViewById(R.id.web);

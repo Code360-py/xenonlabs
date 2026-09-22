@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>XenonLabs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="brand">
+        <span class="dot"></span> XenonLabs
+    </div>
+    <div id="modelTag" class="tag">no model</div>
+</header>
+
+<main id="views">
+
+    <!-- CHAT -->
+    <section id="view-chat" class="view active">
+        <div id="messages" class="messages"></div>
+
+        <form id="composer" class="composer" autocomplete="off">
+            <textarea id="prompt" rows="1" placeholder="Ask anything…"></textarea>
+            <button id="send" type="submit" aria-label="Send">
+                <svg viewBox="0 0 24 24" width="22" height="22">
+                    <path fill="currentColor"
+                        d="M3 20.5v-17L21 12 3 20.5zm2-3.25L15.75 12 5 6.75v3.5L11 12l-6 1.75v3.5z"/>
+                </svg>
+            </button>
+        </form>
+    </section>
+
+    <!-- MODELS -->
+    <section id="view-models" class="view">
+        <div id="modelList" class="model-list"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+        <div class="card">
+            <label>Max tokens <output id="oMax">256</output></label>
+            <input type="range" id="sMax" min="32" max="1024" step="32" value="256">
+
+            <label>Temperature <output id="oTemp">0.70</output></label>
+            <input type="range" id="sTemp" min="0" max="150" step="1" value="70">
+
+            <label>Top-p <output id="oTopP">0.95</output></label>
+            <input type="range" id="sTopP" min="1" max="100" step="1" value="95">
+
+            <label>Top-k <output id="oTopK">40</output></label>
+            <input type="range" id="sTopK" min="0" max="100" step="1" value="40">
+
+            <label>System prompt</label>
+            <textarea id="sSystem" rows="3">You are a helpful assistant.</textarea>
+
+            <button id="save" class="primary">Save</button>
+            <div id="savedMsg" class="hint"></div>
+        </div>
+    </section>
+
+</main>
+
+<nav class="tabbar">
+    <button data-tab="chat" class="tab active">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v12H7l-3 4V4z"/></svg>
+        <span>Chat</span>
+    </button>
+    <button data-tab="models" class="tab">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/></svg>
+        <span>Models</span>
+    </button>
+    <button data-tab="settings" class="tab">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 4l-2-1 2-1-1-2-2 1-1-2-2 1-1-2h-2l-1 2-2-1-1 2-2-1-1 2 2 1-2 1 1 2 2-1 1 2 2-1 1 2h2l1-2 2 1 1-2 2 1 1-2z"/></svg>
+        <span>Settings</span>
+    </button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>

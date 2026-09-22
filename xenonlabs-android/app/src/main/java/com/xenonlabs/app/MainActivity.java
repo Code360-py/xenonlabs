@@ -1,84 +1,205 @@
 package com.xenonlabs.app;
 
-import android.app.AlertDialog;
+import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.method.ScrollingMovementMethod;
-import android.util.Log;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ProgressBar;
-import android.widget.ScrollView;
-import android.widget.TextView;
+import android.webkit.ConsoleMessage;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 public class MainActivity extends AppCompatActivity {
 
     static { System.loadLibrary("xenonlabs_jni"); }
 
-    private static final String MODEL_URL =
-        "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
-    private static final String MODEL_FILENAME = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
-    private static final long   MODEL_MIN_BYTES = 300L * 1024 * 1024;
+    /* ---------- native ---------- */
+    private native int nativeInit(String path);
+    private native void nativeShutdown();
+    private native int nativeGenerateStream(String prompt, int maxTokens,
+                                            float temperature, float topP, int topK,
+                                            TokenCallback cb);
+    public interface TokenCallback { void onToken(String piece); }
 
-    private native int    nativeInit(String modelPath);
-    private native String nativeGenerate(String prompt, int maxTokens);
-    private native void   nativeShutdown();
-
-    private TextView   output;
-    private EditText   input;
-    private Button     send;
-    private ProgressBar progress;
-    private TextView   status;
+    private WebView web;
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private boolean modelReady = false;
-    private boolean busy       = false;
 
+    /* ---------- token routing ---------- */
+    /* each generateStream request gets a fresh callbackId; JS-side has a map */
+    private volatile long currentCallbackId = -1;
+
+    /** Called from JS to set the active callbackId for the next stream. */
+    @JavascriptInterface
+    public void setCallbackId(long id) { currentCallbackId = id; }
+
+    /** Delivers one token to JS via eval. */
+    private void deliverToken(String piece, long callbackId) {
+        String js = "window.__xenonToken(" + callbackId + ", " +
+                    JSONObject.quote(piece) + ");";
+        ui.post(() -> web.evaluateJavascript(js, null));
+    }
+
+    /* ---------- JS bridge ---------- */
+
+    @JavascriptInterface
+    public String ping() { return "pong"; }
+
+    @JavascriptInterface
+    public int loadModel(String path) {
+        return nativeInit(path);
+    }
+
+    @JavascriptInterface
+    public void shutdown() { nativeShutdown(); }
+
+    @JavascriptInterface
+    public int generateStream(String prompt, int maxTokens, float temperature,
+                              float topP, int topK) {
+        long id = currentCallbackId;
+        TokenCallback cb = piece -> deliverToken(piece, id);
+        return nativeGenerateStream(prompt, maxTokens, temperature, topP, topK, cb);
+    }
+
+    @JavascriptInterface
+    public String listModels() {
+        try {
+            JSONArray arr = new JSONArray();
+            String active = AppState.activeModelFilename(this);
+            for (AppState.ModelInfo m : AppState.MODELS) {
+                File f = m.file(this);
+                long bytes = f.exists() ? f.length() : 0;
+                boolean ready = f.exists() && bytes > m.approxBytes * 9 / 10;
+
+                JSONObject o = new JSONObject();
+                o.put("name", m.name);
+                o.put("filename", m.filename);
+                o.put("url", m.url);
+                o.put("approxBytes", m.approxBytes);
+                o.put("bytes", bytes);
+                o.put("ready", ready);
+                o.put("active", m.filename.equals(active));
+                arr.put(o);
+            }
+            return arr.toString();
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    @JavascriptInterface
+    public void setActiveModel(String filename) {
+        AppState.setActiveModel(this, filename);
+    }
+
+    @JavascriptInterface
+    public boolean deleteModel(String filename) {
+        File f = new File(getFilesDir(), filename);
+        return f.delete();
+    }
+
+    @JavascriptInterface
+    public String getSettings() {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("maxTokens",   AppState.maxTokens(this));
+            o.put("temperature", AppState.temperature(this));
+            o.put("topP",        AppState.topP(this));
+            o.put("topK",        AppState.topK(this));
+            o.put("system",      AppState.systemPrompt(this));
+            return o.toString();
+        } catch (Exception e) { return "{}"; }
+    }
+
+    @JavascriptInterface
+    public void saveSettings(int maxTok, float temp, float topP, int topK, String sys) {
+        AppState.save(this, maxTok, temp, topP, topK, sys);
+    }
+
+    /* Called from JS as: Xenon.downloadModel(url, filename, dlId) */
+    @JavascriptInterface
+    public void downloadModel(String url, String filename, long dlId) {
+        new Thread(() -> downloadWorker(url, filename, dlId)).start();
+    }
+
+    private void downloadWorker(String url, String filename, long dlId) {
+        try {
+            java.net.HttpURLConnection c =
+                (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            c.setInstanceFollowRedirects(true);
+            c.connect();
+            if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+
+            long total = c.getContentLengthLong();
+            long done = 0;
+            File tmp = new File(getFilesDir(), filename + ".part");
+            byte[] buf = new byte[1 << 16];
+
+            try (java.io.InputStream in = c.getInputStream();
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+                int n; long last = 0;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    done += n;
+                    long now = System.currentTimeMillis();
+                    if (now - last > 400) {
+                        last = now;
+                        int pct = total > 0 ? (int)(done * 100 / total) : 0;
+                        notifyDownload(dlId, pct, done, total, false);
+                    }
+                }
+            }
+            tmp.renameTo(new File(getFilesDir(), filename));
+            notifyDownload(dlId, 100, done, total, true);
+
+        } catch (Exception e) {
+            notifyDownloadError(dlId, e.getMessage());
+        }
+    }
+
+    private void notifyDownload(long id, int pct, long done, long total, boolean finished) {
+        String js = "window.__xenonDownload(" + id + "," + pct + "," + done + "," + total + "," + finished + ");";
+        ui.post(() -> web.evaluateJavascript(js, null));
+    }
+
+    private void notifyDownloadError(long id, String msg) {
+        String js = "window.__xenonDownloadError(" + id + "," + JSONObject.quote(msg) + ");";
+        ui.post(() -> web.evaluateJavascript(js, null));
+    }
+
+    /* ---------- Activity ---------- */
+
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         setContentView(R.layout.activity_main);
 
-        output   = findViewById(R.id.output);
-        input    = findViewById(R.id.input);
-        send     = findViewById(R.id.send);
-        progress = findViewById(R.id.progress);
-        status   = findViewById(R.id.status);
+        web = findViewById(R.id.web);
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setAllowFileAccess(true);
+        s.setAllowContentAccess(true);
 
-        output.setMovementMethod(new ScrollingMovementMethod());
-
-        ensureModel();
-
-        send.setOnClickListener(v -> {
-            if (!modelReady || busy) return;
-            String p = input.getText().toString().trim();
-            if (p.isEmpty()) return;
-            input.setText("");
-            appendUser(p);
-            busy = true;
-            send.setEnabled(false);
-            progress.setVisibility(View.VISIBLE);
-            progress.setIndeterminate(true);
-            new Thread(() -> {
-                String r = nativeGenerate(p, 256);
-                ui.post(() -> {
-                    appendAssistant(r);
-                    busy = false;
-                    send.setEnabled(true);
-                    progress.setIndeterminate(false);
-                    progress.setVisibility(View.GONE);
-                });
-            }).start();
+        web.setWebViewClient(new WebViewClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onConsoleMessage(ConsoleMessage m) {
+                android.util.Log.d("XenonWeb", m.message());
+                return true;
+            }
         });
+
+        web.addJavascriptInterface(new Bridge(), "Xenon");
+        web.loadUrl("file:///android_asset/index.html");
     }
 
     @Override
@@ -87,125 +208,24 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
-    private File modelFile() {
-        return new File(getFilesDir(), MODEL_FILENAME);
-    }
-
-    private void ensureModel() {
-        File f = modelFile();
-        if (f.exists() && f.length() >= MODEL_MIN_BYTES) {
-            loadModel();
-            return;
+    /* Small inner class so JS calls land on a proper bridge object */
+    public class Bridge {
+        @JavascriptInterface public String ping() { return MainActivity.this.ping(); }
+        @JavascriptInterface public int    loadModel(String p) { return MainActivity.this.loadModel(p); }
+        @JavascriptInterface public void   shutdown()          { MainActivity.this.shutdown(); }
+        @JavascriptInterface public int    generateStream(String p, int m, float t, float tp, int tk) {
+            return MainActivity.this.generateStream(p, m, t, tp, tk);
         }
-
-        new AlertDialog.Builder(this)
-            .setTitle("Download model")
-            .setMessage("Qwen2.5-0.5B-Instruct (~400 MB) will be downloaded once.\n\nWi-Fi recommended.")
-            .setCancelable(false)
-            .setPositiveButton("Download", (d, w) -> downloadModel())
-            .setNegativeButton("Use demo model", (d, w) -> useBundledDemo())
-            .show();
-    }
-
-    private void useBundledDemo() {
-        new Thread(() -> {
-            File dst = modelFile();
-            try (InputStream is = getAssets().open("model.gguf");
-                 FileOutputStream os = new FileOutputStream(dst)) {
-                byte[] buf = new byte[1 << 16];
-                int n;
-                while ((n = is.read(buf)) > 0) os.write(buf, 0, n);
-            } catch (Exception e) {
-                ui.post(() -> appendSystem("Failed: " + e));
-                return;
-            }
-            ui.post(this::loadModel);
-        }).start();
-    }
-
-    private void downloadModel() {
-        progress.setVisibility(View.VISIBLE);
-        progress.setIndeterminate(false);
-        status.setVisibility(View.VISIBLE);
-        status.setText("Connecting…");
-
-        new Thread(() -> {
-            File tmp = new File(getFilesDir(), MODEL_FILENAME + ".part");
-            try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(MODEL_URL).openConnection();
-                conn.setInstanceFollowRedirects(true);
-                conn.connect();
-                if (conn.getResponseCode() != 200)
-                    throw new Exception("HTTP " + conn.getResponseCode());
-
-                long total = conn.getContentLengthLong();
-                long done  = 0;
-
-                try (InputStream in = conn.getInputStream();
-                     FileOutputStream out = new FileOutputStream(tmp)) {
-                    byte[] buf = new byte[1 << 16];
-                    int n;
-                    long lastUpdate = 0;
-                    while ((n = in.read(buf)) > 0) {
-                        out.write(buf, 0, n);
-                        done += n;
-                        long now = System.currentTimeMillis();
-                        if (now - lastUpdate > 500) {
-                            lastUpdate = now;
-                            int pct = total > 0 ? (int)(done * 100 / total) : 0;
-                            long mb  = done / (1024 * 1024);
-                            long mbT = total > 0 ? total / (1024 * 1024) : 0;
-                            ui.post(() -> {
-                                progress.setProgress(pct);
-                                status.setText("Downloading " + mb + " / " + mbT + " MB (" + pct + "%)");
-                            });
-                        }
-                    }
-                }
-                tmp.renameTo(modelFile());
-                ui.post(() -> {
-                    status.setText("Loading model…");
-                    loadModel();
-                });
-            } catch (Exception e) {
-                ui.post(() -> {
-                    status.setText("Download failed: " + e.getMessage());
-                    progress.setVisibility(View.GONE);
-                });
-            }
-        }).start();
-    }
-
-    private void loadModel() {
-        status.setVisibility(View.VISIBLE);
-        status.setText("Loading model…");
-        progress.setVisibility(View.VISIBLE);
-
-        new Thread(() -> {
-            int rc = nativeInit(modelFile().getAbsolutePath());
-            ui.post(() -> {
-                progress.setVisibility(View.GONE);
-                if (rc == 0) {
-                    modelReady = true;
-                    status.setText("Ready");
-                    status.setVisibility(View.GONE);
-                    appendSystem("Model ready. Ask anything.");
-                } else {
-                    status.setText("Init failed: " + rc);
-                }
-            });
-        }).start();
-    }
-
-    private void appendUser(String s)      { appendLine("🧑  " + s); }
-    private void appendAssistant(String s) { appendLine("🤖  " + s); }
-    private void appendSystem(String s)    { appendLine("· " + s); }
-
-    private void appendLine(String s) {
-        ui.post(() -> {
-            output.append(s + "\n\n");
-            ScrollView sv = findViewById(R.id.scroll);
-            sv.post(() -> sv.fullScroll(ScrollView.FOCUS_DOWN));
-        });
+        @JavascriptInterface public void   setCallbackId(long id) { MainActivity.this.setCallbackId(id); }
+        @JavascriptInterface public String listModels()        { return MainActivity.this.listModels(); }
+        @JavascriptInterface public void   setActiveModel(String f) { MainActivity.this.setActiveModel(f); }
+        @JavascriptInterface public boolean deleteModel(String f)   { return MainActivity.this.deleteModel(f); }
+        @JavascriptInterface public String getSettings()       { return MainActivity.this.getSettings(); }
+        @JavascriptInterface public void   saveSettings(int m, float t, float tp, int tk, String s) {
+            MainActivity.this.saveSettings(m, t, tp, tk, s);
+        }
+        @JavascriptInterface public void   downloadModel(String u, String f, long id) {
+            MainActivity.this.downloadModel(u, f, id);
+        }
     }
 }

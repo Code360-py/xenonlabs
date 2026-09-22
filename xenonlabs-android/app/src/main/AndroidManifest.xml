@@ -5,7 +5,6 @@
         android:label="XenonLabs"
         android:theme="@style/Theme.AppCompat.DayNight"
         android:allowBackup="true"
-        android:extractNativeLibs="true">
 
         <activity
             android:name=".MainActivity"

@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-android-arm64-v4
+          key: llama-cpp-android-arm64-v5
 
       - name: Clone llama.cpp
         run: |

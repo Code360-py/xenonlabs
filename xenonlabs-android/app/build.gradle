@@ -54,13 +54,9 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
-
-    kotlinOptions {
-        jvmTarget = "21"
-    }
 }
 
-/* ---- Force single Kotlin stdlib version across all configurations ---- */
+/* Force single Kotlin stdlib version across all configurations */
 configurations.all {
     resolutionStrategy {
         force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'

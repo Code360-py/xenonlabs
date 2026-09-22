@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-android-arm64-v3
+          key: llama-cpp-android-arm64-v4
 
       - name: Clone llama.cpp
         run: |
@@ -92,7 +92,7 @@ jobs:
 
       - name: Generate Gradle wrapper
         working-directory: xenonlabs-android
-        run: gradle wrapper --gradle-version 8.7
+        run: gradle wrapper --gradle-version 8.9
 
       - name: Build debug APK
         working-directory: xenonlabs-android

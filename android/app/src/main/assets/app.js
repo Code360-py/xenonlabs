@@ -305,7 +305,7 @@
             '</div>' +
             '<div class="xl-msg-body">' +
                 '<div class="xl-msg-text"></div>' +
-                '<div class="xl-msg-actions" style="display:none;"></div>' +
+                '<div class="xl-msg-actions"></div>' +
             '</div>';
         row.querySelector('.xl-msg-text').textContent = text;
 
@@ -382,7 +382,7 @@
             '</div>' +
             '<div class="xl-msg-body">' +
                 '<div class="xl-msg-text"></div>' +
-                '<div class="xl-msg-actions" style="display:none;"></div>' +
+                '<div class="xl-msg-actions"></div>' +
             '</div>';
 
         const textEl = row.querySelector('.xl-msg-text');

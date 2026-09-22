@@ -26,6 +26,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -52,6 +53,8 @@ public class MainActivity extends AppCompatActivity {
     private WebView web;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long currentCallbackId = -1;
+    private TextToSpeech tts;
+    private volatile boolean ttsReady = false;
     private ActivityResultLauncher<String[]> filePicker;
     private volatile boolean importing = false;
 
@@ -230,6 +233,8 @@ public class MainActivity extends AppCompatActivity {
             web.addJavascriptInterface(new Bridge(), "Xenon");
             web.loadUrl("file:///android_asset/index.html");
 
+            initTts();
+
             Log.i(TAG, "onCreate complete; nativeLoaded=" + nativeLoaded);
         } catch (Throwable t) {
             showCrash("onCreate", t);
@@ -239,6 +244,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         try { if (nativeLoaded) nativeShutdown(); } catch (Throwable ignored) {}
+        try {
+            if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
+        } catch (Throwable ignored) {}
         super.onDestroy();
     }
 
@@ -339,6 +347,69 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Throwable ignored) {}
         return 0;
+    }
+
+    /* ============================================================
+       Text-to-speech
+       ============================================================ */
+
+    private void initTts() {
+        if (tts != null) return;
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                try {
+                    tts.setLanguage(Locale.getDefault());
+                    /* slow down slightly — LLM output sounds fast at 1.0 */
+                    tts.setSpeechRate(0.95f);
+                    ttsReady = true;
+                } catch (Throwable t) {
+                    ttsReady = false;
+                }
+            } else {
+                ttsReady = false;
+            }
+        });
+    }
+
+    @JavascriptInterface
+    public boolean ttsAvailable() {
+        return tts != null;
+    }
+
+    @JavascriptInterface
+    public void speak(String text) {
+        if (text == null || text.isEmpty()) return;
+        if (tts == null) initTts();
+        if (tts == null) {
+            eval("window.__xenonTtsState && window.__xenonTtsState('unavailable');");
+            return;
+        }
+        /* clean up markdown that would sound weird */
+        String clean = text
+            .replaceAll("```[\\s\\S]*?```", " code block ")
+            .replaceAll("`([^`]*)`", "$1")
+            .replaceAll("\\*\\*([^*]*)\\*\\*", "$1")
+            .replaceAll("\\*([^*]*)\\*", "$1")
+            .replaceAll("^#+ ", "")
+            .replaceAll("\\[(.+?)\\]\\(.+?\\)", "$1");
+
+        ui.post(() -> {
+            try {
+                tts.stop();
+                tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "xenon-tts");
+                eval("window.__xenonTtsState && window.__xenonTtsState('speaking');");
+            } catch (Throwable t) {
+                eval("window.__xenonTtsState && window.__xenonTtsState('idle');");
+            }
+        });
+    }
+
+    @JavascriptInterface
+    public void stopSpeaking() {
+        if (tts != null) {
+            try { tts.stop(); } catch (Throwable ignored) {}
+        }
+        eval("window.__xenonTtsState && window.__xenonTtsState('idle');");
     }
 
     public class Bridge {

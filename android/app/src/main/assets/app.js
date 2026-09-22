@@ -207,6 +207,8 @@
     }
     function switchToConversation(id) {
         if (activeId === id) { closeSidebar(); return; }
+        try { window.Xenon.stopSpeaking(); } catch (_) {}
+        if (window.__xenonTtsState) window.__xenonTtsState('idle');
         activeId = id; store.setItem(ACTIVE_KEY, activeId);
         renderChat(); renderHistory(); closeSidebar();
     }
@@ -244,6 +246,8 @@
     };
     const headerNew = $('#newChatBtn');
     if (headerNew) headerNew.onclick = () => {
+        try { window.Xenon.stopSpeaking(); } catch (_) {}
+        if (window.__xenonTtsState) window.__xenonTtsState('idle');
         newConversation(); renderChat(); renderHistory();
     };
 
@@ -424,6 +428,17 @@
             };
             actions.appendChild(regen);
         }
+
+        /* Speak button — present on every assistant reply */
+        const speakBtn = document.createElement('button');
+        speakBtn.className = 'act-speak';
+        speakBtn.innerHTML = '<i class="fa-solid fa-volume-high"></i> Speak';
+        speakBtn.onclick = (e) => {
+            e.stopPropagation();
+            speakRow(row, textEl);
+        };
+        actions.appendChild(speakBtn);
+
         return row;
     }
 
@@ -509,6 +524,10 @@
         const asstTextEl = asstRow.querySelector('.xl-msg-text');
         messages.appendChild(asstRow);
         scrollBottom();
+
+        /* stop any speech currently playing */
+        try { window.Xenon.stopSpeaking(); } catch (_) {}
+        if (window.__xenonTtsState) window.__xenonTtsState('idle');
 
         generating = true;
         if (sendBtn) sendBtn.disabled = true;
@@ -1046,6 +1065,55 @@
         if (!apk || !apk.browser_download_url) return;
 
         showUpdateBanner(remote, apk.browser_download_url, j.html_url || RELEASES_URL);
+    }
+
+    /* ============================================================
+       Text-to-speech
+       ============================================================ */
+
+    let currentSpeakingId = null;   /* DOM id of the row being spoken */
+
+    window.__xenonTtsState = state => {
+        /* Reset all speak buttons */
+        document.querySelectorAll('.xl-msg-actions .act-speak').forEach(btn => {
+            btn.classList.remove('speaking');
+            btn.innerHTML = '<i class="fa-solid fa-volume-high"></i> Speak';
+        });
+        if (state === 'speaking' && currentSpeakingId) {
+            const btn = document.querySelector('#' + currentSpeakingId + ' .act-speak');
+            if (btn) {
+                btn.classList.add('speaking');
+                btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+            }
+        }
+        if (state === 'idle' || state === 'unavailable') {
+            currentSpeakingId = null;
+            if (state === 'unavailable') toast('Speech unavailable on this device', 'fa-solid fa-triangle-exclamation');
+        }
+    };
+
+    let nextTtsId = 1;
+    function speakRow(rowEl, textEl) {
+        const text = rowEl.dataset.raw || textEl.textContent || '';
+        if (!text.trim()) return;
+
+        /* tap again to stop */
+        if (currentSpeakingId === rowEl.id && rowEl.querySelector('.act-speak.speaking')) {
+            try { window.Xenon.stopSpeaking(); } catch (_) {}
+            window.__xenonTtsState && window.__xenonTtsState('idle');
+            return;
+        }
+
+        try { window.Xenon.stopSpeaking(); } catch (_) {}
+        if (!rowEl.id) rowEl.id = 'xl-speak-' + (nextTtsId++);
+        currentSpeakingId = rowEl.id;
+
+        try {
+            window.Xenon.speak(text);
+        } catch (e) {
+            toast('Speech not available');
+            currentSpeakingId = null;
+        }
     }
 
     /* ---------- boot ---------- */

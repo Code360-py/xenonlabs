@@ -26,3 +26,4 @@ android/app/src/main/jni/llama_include/*.h
 
 # CI scratch
 llama.cpp/
+preview/

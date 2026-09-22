@@ -208,12 +208,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
-        /* Handle "New chat" tap from widget */
-        if (getIntent() != null && getIntent().getBooleanExtra("xenon_new_chat", false)) {
-            getIntent().removeExtra("xenon_new_chat");
-            /* JS will see this via a flag set after loadUrl */
-        }
-
         filePicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(),
             uri -> {
@@ -254,6 +248,21 @@ public class MainActivity extends AppCompatActivity {
         } catch (Throwable t) {
             showCrash("onCreate", t);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+
+        /* The WebView is already loaded. Don't re-create it.
+         * If the widget asked for a new chat, tell the JS side. */
+        try {
+            if (intent != null && intent.getBooleanExtra("xenon_new_chat", false)) {
+                intent.removeExtra("xenon_new_chat");
+                eval("window.__xenonNewChat && window.__xenonNewChat();");
+            }
+        } catch (Throwable ignored) {}
     }
 
     @Override

@@ -41,7 +41,7 @@ public class XenonWidget extends AppWidgetProvider {
 
         /* Tapping the title or reply opens the app */
         Intent open = new Intent(ctx, MainActivity.class);
-        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent pi = PendingIntent.getActivity(ctx, 0, open, flags);
@@ -50,7 +50,7 @@ public class XenonWidget extends AppWidgetProvider {
 
         /* New chat button */
         Intent newChat = new Intent(ctx, MainActivity.class);
-        newChat.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        newChat.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         newChat.putExtra("xenon_new_chat", true);
         PendingIntent piNew = PendingIntent.getActivity(ctx, 1, newChat, flags);
         views.setOnClickPendingIntent(R.id.widget_new_chat, piNew);

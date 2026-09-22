@@ -1120,6 +1120,20 @@
         }
     }
 
+    /* Called from Java when the widget's "New chat" button launches the app */
+    window.__xenonNewChat = function () {
+        try {
+            try { window.Xenon.stopSpeaking(); } catch (_) {}
+            if (window.__xenonTtsState) window.__xenonTtsState('idle');
+            newConversation();
+            renderChat();
+            renderHistory();
+            activateTab('chat');
+        } catch (e) {
+            console.error('__xenonNewChat failed:', e);
+        }
+    };
+
     /* ---------- boot ---------- */
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }

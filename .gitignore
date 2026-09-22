@@ -16,3 +16,6 @@ xenonlabs-android/app/src/main/jni/llama_include/ggml.h
 xenonlabs-android/gradlew
 xenonlabs-android/gradlew.bat
 xenonlabs-android/gradle/
+
+# Ship the bundled demo model
+!xenonlabs-android/app/src/main/assets/model.gguf

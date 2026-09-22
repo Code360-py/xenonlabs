@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.provider.OpenableColumns;
 import android.os.Handler;
 import android.os.Looper;
@@ -430,5 +431,8 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void   downloadModel(String u, String f, long id)  { MainActivity.this.downloadModel(u, f, id); }
         @JavascriptInterface public void   importModel()                              { MainActivity.this.importModel(); }
         @JavascriptInterface public boolean isImporting()                             { return MainActivity.this.isImporting(); }
+    
+        @JavascriptInterface public void   speak(String text)                         { MainActivity.this.speak(text); }
+        @JavascriptInterface public void   stopSpeaking()                             { MainActivity.this.stopSpeaking(); }
     }
 }

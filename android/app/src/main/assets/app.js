@@ -687,6 +687,7 @@
                 use.disabled = m.active;
                 use.onclick = async () => {
                     window.Xenon.setActiveModel(m.filename);
+                    toast('Switched to ' + m.name);
                     await loadModels();
                     await reloadModel();
                 };
@@ -720,6 +721,7 @@
                 use.disabled = m.active;
                 use.onclick = async () => {
                     window.Xenon.setActiveModel(m.filename);
+                    toast('Switched to ' + m.name);
                     await loadModels();
                     await reloadModel();
                 };
@@ -730,6 +732,7 @@
                 del.onclick = () => {
                     if (!confirm('Delete ' + m.name + '?')) return;
                     window.Xenon.deleteModel(m.filename);
+                    toast('Model deleted');
                     setTimeout(loadModels, 150);
                 };
                 actions.appendChild(del);
@@ -762,8 +765,13 @@
         const path = window.Xenon.modelPath(active.filename);
         setTimeout(() => {
             const rc = window.Xenon.loadModel(path);
-            if (rc === 0) setIsland('ready', active.name, '');
-            else setIsland('error', 'Load failed', 'code ' + rc);
+            if (rc === 0) {
+                setIsland('ready', active.name, '');
+                toast('Model ready: ' + active.name);
+            } else {
+                setIsland('error', 'Load failed', 'code ' + rc);
+                toast('Load failed: code ' + rc, 'fa-solid fa-triangle-exclamation');
+            }
             renderChat();
         }, 40);
     }
@@ -871,6 +879,7 @@
         convs = []; activeId = null;
         store.removeItem(CONV_KEY); store.removeItem(ACTIVE_KEY);
         renderHistory(); renderChat();
+        toast('All conversations cleared');
     };
     const resetBtn = document.getElementById('resetSettings');
     if (resetBtn) resetBtn.onclick = () => {
@@ -881,10 +890,14 @@
          'xenon.theme','xenon.streaming','xenon.md']
             .forEach(k => store.removeItem(k));
         loadSettings();
+        toast('Settings reset');
     };
 
     const refreshBtn = document.getElementById('refreshModelsBtn');
-    if (refreshBtn) refreshBtn.onclick = () => loadModels();
+    if (refreshBtn) refreshBtn.onclick = () => {
+        loadModels();
+        toast('Refreshed');
+    };
 
     /* ============================================================
        Import GGUF from device

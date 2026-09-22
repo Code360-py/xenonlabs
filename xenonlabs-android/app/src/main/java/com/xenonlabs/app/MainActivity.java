@@ -1,13 +1,10 @@
 package com.xenonlabs.app;
 
 import android.annotation.SuppressLint;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.View;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
+import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -16,7 +13,6 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.view.WindowCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -25,7 +21,15 @@ import java.io.File;
 
 public class MainActivity extends AppCompatActivity {
 
-    static { System.loadLibrary("xenonlabs_jni"); }
+    private static final String TAG = "XenonLabs";
+
+    static {
+        try {
+            System.loadLibrary("xenonlabs_jni");
+        } catch (Throwable t) {
+            Log.e(TAG, "native library load failed", t);
+        }
+    }
 
     private native int  nativeInit(String path);
     private native void nativeShutdown();
@@ -41,14 +45,9 @@ public class MainActivity extends AppCompatActivity {
 
     /* ---------- bridge ---------- */
 
-    @JavascriptInterface
-    public void setCallbackId(long id) { currentCallbackId = id; }
-
-    @JavascriptInterface
-    public int loadModel(String path) { return nativeInit(path); }
-
-    @JavascriptInterface
-    public void shutdown() { nativeShutdown(); }
+    @JavascriptInterface public void setCallbackId(long id) { currentCallbackId = id; }
+    @JavascriptInterface public int  loadModel(String path) { return nativeInit(path); }
+    @JavascriptInterface public void shutdown()             { nativeShutdown(); }
 
     @JavascriptInterface
     public void generateStream(final String prompt, final int maxTokens,
@@ -59,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
                 nativeGenerateStream(prompt, maxTokens, temperature, topP, topK,
                     piece -> deliverToken(callbackId, piece));
             } catch (Throwable t) {
+                Log.e(TAG, "generateStream error", t);
                 deliverError(callbackId, String.valueOf(t.getMessage()));
             } finally {
                 deliverDone(callbackId);
@@ -75,7 +75,10 @@ public class MainActivity extends AppCompatActivity {
     private void deliverDone(long id) {
         eval("window.__xenonDone && window.__xenonDone(" + id + ");");
     }
-    private void eval(String js) { ui.post(() -> web.evaluateJavascript(js, null)); }
+    private void eval(String js) {
+        if (web == null) return;
+        ui.post(() -> { try { web.evaluateJavascript(js, null); } catch (Throwable ignored) {} });
+    }
 
     @JavascriptInterface
     public String listModels() {
@@ -164,32 +167,12 @@ public class MainActivity extends AppCompatActivity {
              + JSONObject.quote(msg == null ? "error" : msg) + ");");
     }
 
-    /* ---------- activity ---------- */
+    /* ---------- activity — minimal, no fullscreen, no insets ---------- */
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-
-        /* full-screen edge-to-edge, hide system bars */
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController c = getWindow().getInsetsController();
-            if (c != null) {
-                c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                c.setSystemBarsBehavior(
-                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
-        } else {
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-              | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-              | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-              | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-              | View.SYSTEM_UI_FLAG_FULLSCREEN
-              | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-        }
-
         setContentView(R.layout.activity_main);
 
         web = findViewById(R.id.web);
@@ -202,7 +185,7 @@ public class MainActivity extends AppCompatActivity {
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onConsoleMessage(ConsoleMessage m) {
-                android.util.Log.d("XenonWeb", m.message());
+                Log.d("XenonWeb", m.message());
                 return true;
             }
         });
@@ -213,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        nativeShutdown();
+        try { nativeShutdown(); } catch (Throwable ignored) {}
         super.onDestroy();
     }
 

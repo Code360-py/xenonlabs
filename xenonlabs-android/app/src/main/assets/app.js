@@ -1,9 +1,56 @@
 /* ============================================================
-   XenonLabs — iPhone UI logic
+   XenonLabs — iPhone UI logic + Markdown rendering
    ============================================================ */
 
 const $  = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
+
+/* ---------------- markdown config ---------------- */
+
+const mdRenderer = (typeof marked !== 'undefined')
+    ? marked.parse.bind(marked)
+    : (t) => t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+
+if (typeof marked !== 'undefined') {
+    marked.setOptions({
+        breaks: true,
+        gfm: true,
+        headerIds: false,
+        mangle: false,
+    });
+}
+
+function renderMarkdown(el, text) {
+    el.innerHTML = mdRenderer(text);
+    /* syntax-highlight any unhighlighted code blocks */
+    el.querySelectorAll('pre code').forEach(block => {
+        if (!block.dataset.hl) {
+            try { hljs.highlightElement(block); } catch {}
+            block.dataset.hl = '1';
+        }
+    });
+}
+
+function renderPlain(el, text) {
+    el.textContent = text;
+}
+
+/* Render scheduler — throttles to one render per animation frame */
+function makeRenderScheduler(el) {
+    let pending = null;
+    let rafId = null;
+    return (text) => {
+        pending = text;
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            const t = pending;
+            pending = null;
+            if (mdEnabled()) renderMarkdown(el, t);
+            else             renderPlain(el, t);
+        });
+    };
+}
 
 /* ---------------- tabs ---------------- */
 
@@ -100,11 +147,46 @@ let generating = false;
 function addBubble(cls, text) {
     const el = document.createElement('div');
     el.className = 'bubble ' + cls;
-    el.textContent = text;
+    if (cls.includes('assistant')) {
+        /* copy button */
+        const btn = document.createElement('button');
+        btn.className = 'copy-btn';
+        btn.setAttribute('aria-label', 'Copy');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M16 1H4a2 2 0 00-2 2v14h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11v14z"/></svg>';
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const text = el.dataset.raw || el.textContent;
+            copyText(text);
+            el.classList.add('copied');
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.2l-3.5-3.5-1.4 1.4L9 19 20.3 7.7l-1.4-1.4z"/></svg>';
+            setTimeout(() => {
+                el.classList.remove('copied');
+                btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M16 1H4a2 2 0 00-2 2v14h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11v14z"/></svg>';
+            }, 1200);
+        };
+        el.appendChild(btn);
+    }
+    if (text) {
+        if (mdEnabled() && cls.includes('assistant')) renderMarkdown(el, text);
+        else el.appendChild(document.createTextNode(text));
+    }
+    el.dataset.raw = text || '';
     messages.appendChild(el);
     scrollBottom();
     return el;
 }
+
+function copyText(t) {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+}
+
 function scrollBottom() {
     requestAnimationFrame(() => messages.scrollTop = messages.scrollHeight);
 }
@@ -131,6 +213,8 @@ $('#composer').addEventListener('submit', e => {
     addBubble('user', text);
 
     const asst = addBubble('assistant typing', '');
+    const scheduleRender = makeRenderScheduler(asst);
+
     generating = true;
     sendBtn.disabled = true;
     setIsland('generating', 'Thinking…', '0 tok');
@@ -149,13 +233,15 @@ $('#composer').addEventListener('submit', e => {
         onToken: piece => {
             acc += piece;
             tokens++;
-            asst.textContent = acc;
+            asst.dataset.raw = acc;
+            scheduleRender(acc);
             scrollBottom();
             setIsland('generating', 'Generating…', tokens + ' tok');
         },
         onDone: () => {
             asst.classList.remove('typing');
             if (!acc) asst.textContent = '[no output]';
+            else if (mdEnabled()) renderMarkdown(asst, acc);
             generating = false;
             sendBtn.disabled = false;
             const active = JSON.parse(window.Xenon.listModels()).find(m => m.active);
@@ -178,6 +264,15 @@ $('#composer').addEventListener('submit', e => {
         s.topK | 0,
         id);
 });
+
+/* ---------------- markdown toggle ---------------- */
+
+function mdEnabled() {
+    return localStorage.getItem('xenon.md') !== '0';
+}
+function setMdEnabled(on) {
+    localStorage.setItem('xenon.md', on ? '1' : '0');
+}
 
 /* ---------------- models ---------------- */
 
@@ -250,7 +345,6 @@ async function reloadModel() {
     const models = JSON.parse(window.Xenon.listModels());
     const active = models.find(m => m.active && m.ready);
 
-    /* update sidebar */
     $('#sidebarModel').textContent = active
         ? 'Loaded: ' + active.name
         : 'No model loaded';
@@ -286,6 +380,7 @@ function bindRange(id, outId, fmt) {
     el.addEventListener('input', update);
     update();
 }
+
 function loadSettings() {
     const s = JSON.parse(window.Xenon.getSettings());
     $('#sMax').value    = s.maxTokens;
@@ -293,11 +388,16 @@ function loadSettings() {
     $('#sTopP').value   = Math.round(s.topP * 100);
     $('#sTopK').value   = s.topK;
     $('#sSystem').value = s.system;
+
+    $('#mdToggle').checked = mdEnabled();
+    $('#mdToggle').addEventListener('change', e => setMdEnabled(e.target.checked));
+
     bindRange('sMax',  'oMax');
     bindRange('sTemp','oTemp', v => (v / 100).toFixed(2));
     bindRange('sTopP','oTopP', v => (v / 100).toFixed(2));
     bindRange('sTopK','oTopK');
 }
+
 $('#save').onclick = () => {
     window.Xenon.saveSettings(
         +$('#sMax').value,

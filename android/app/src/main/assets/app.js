@@ -2,7 +2,6 @@
 (function () {
     'use strict';
 
-    /* ---------- safe localStorage ---------- */
     const store = (() => {
         try { localStorage.setItem('_t','1'); localStorage.removeItem('_t'); return localStorage; }
         catch (_) {
@@ -15,6 +14,10 @@
         }
     })();
 
+    function escapeHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
     const $  = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
 
@@ -26,33 +29,24 @@
     }
     window.addEventListener('error', e => showError('JS: ' + e.message));
 
-    /* ============================================================
-       CONVERSATIONS  (ChatGPT-style)
-       ============================================================ */
-
-    const CONV_KEY = 'xenon.convs';
+    /* -------- conversations -------- */
+    const CONV_KEY   = 'xenon.convs';
     const ACTIVE_KEY = 'xenon.activeConv';
 
     function loadConvs() {
         try { return JSON.parse(store.getItem(CONV_KEY) || '[]'); }
         catch (_) { return []; }
     }
-    function saveConvs(list) {
-        try { store.setItem(CONV_KEY, JSON.stringify(list)); } catch (_) {}
-    }
+    function saveConvs(list) { try { store.setItem(CONV_KEY, JSON.stringify(list)); } catch (_) {} }
 
     let convs = loadConvs();
     let activeId = store.getItem(ACTIVE_KEY) || null;
 
     function findConv(id) { return convs.find(c => c.id === id); }
-
     function newConversation() {
         const c = {
             id: 'c_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
-            title: 'New chat',
-            created: Date.now(),
-            updated: Date.now(),
-            messages: [],
+            title: 'New chat', created: Date.now(), updated: Date.now(), messages: [],
         };
         convs.unshift(c);
         activeId = c.id;
@@ -60,13 +54,11 @@
         saveConvs(convs);
         return c;
     }
-
     function currentConversation() {
         let c = findConv(activeId);
         if (!c) c = newConversation();
         return c;
     }
-
     function updateTitleFromFirstMessage(c) {
         if (c.title && c.title !== 'New chat') return;
         const firstUser = c.messages.find(m => m.role === 'user');
@@ -74,15 +66,12 @@
         const t = firstUser.text.replace(/\s+/g, ' ').trim();
         c.title = t.length > 34 ? t.slice(0, 34).trim() + '…' : t;
     }
-
     function persistActive() {
-        const c = findConv(activeId);
-        if (!c) return;
+        const c = findConv(activeId); if (!c) return;
         c.updated = Date.now();
         saveConvs(convs);
         renderHistory();
     }
-
     function deleteConversation(id) {
         convs = convs.filter(c => c.id !== id);
         if (activeId === id) activeId = convs[0] ? convs[0].id : null;
@@ -90,7 +79,6 @@
         saveConvs(convs);
         renderHistory();
     }
-
     function relativeTime(ts) {
         const s = (Date.now() - ts) / 1000;
         if (s < 60)    return 'now';
@@ -100,19 +88,13 @@
         if (d < 7)     return d + 'd';
         return Math.floor(d / 7) + 'w';
     }
-
     function renderHistory() {
-        const list = $('#historyList');
-        if (!list) return;
-
+        const list = $('#historyList'); if (!list) return;
         if (!convs.length) {
             list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>';
             return;
         }
-
-        /* newest first */
         const sorted = convs.slice().sort((a, b) => b.updated - a.updated);
-
         list.innerHTML = '';
         for (const c of sorted) {
             const el = document.createElement('div');
@@ -123,25 +105,17 @@
                 '<span class="xl-history-title">' + escapeHtml(c.title || 'New chat') + '</span>' +
                 '<span class="xl-history-time">' + relativeTime(c.updated) + '</span>' +
                 '<button class="del" aria-label="Delete"><i class="fa-solid fa-xmark"></i></button>';
-
-            el.addEventListener('click', (ev) => {
+            el.addEventListener('click', ev => {
                 if (ev.target.closest('.del')) return;
                 switchToConversation(c.id);
             });
-            el.querySelector('.del').addEventListener('click', (ev) => {
+            el.querySelector('.del').addEventListener('click', ev => {
                 ev.stopPropagation();
-                if (confirm('Delete "' + (c.title || 'New chat') + '"?'))
-                    deleteConversation(c.id);
+                if (confirm('Delete "' + (c.title || 'New chat') + '"?')) deleteConversation(c.id);
             });
-
             list.appendChild(el);
         }
     }
-
-    function escapeHtml(s) {
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     function switchToConversation(id) {
         if (activeId === id) { closeSidebar(); return; }
         activeId = id;
@@ -151,60 +125,34 @@
         closeSidebar();
     }
 
-    /* ============================================================
-       TABS
-       ============================================================ */
-
+    /* -------- tabs -------- */
     function activateTab(name) {
         $$('.xl-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
         $$('.xl-view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     }
     $$('.xl-tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
-    /* ============================================================
-       SIDEBAR
-       ============================================================ */
-
+    /* -------- sidebar -------- */
     const sidebar = $('#sidebar');
     const scrim   = $('#sidebarScrim');
-
-    function openSidebar()  {
-        if (scrim) scrim.hidden = false;
-        if (sidebar) sidebar.hidden = false;
-        renderHistory();
-    }
+    function openSidebar()  { if (scrim) scrim.hidden = false; if (sidebar) sidebar.hidden = false; renderHistory(); }
     function closeSidebar() {
         if (sidebar) sidebar.classList.add('closing');
         if (scrim)   scrim.classList.add('closing');
         setTimeout(() => {
             if (sidebar) { sidebar.hidden = true; sidebar.classList.remove('closing'); }
-            if (scrim)   { scrim.hidden = true;   scrim.classList.remove('closing'); }
+            if (scrim)   { scrim.hidden = true; scrim.classList.remove('closing'); }
         }, 220);
     }
-
     const sb = $('#sidebarBtn'); if (sb) sb.onclick = openSidebar;
     if (scrim) scrim.onclick = closeSidebar;
-
     const sidebarNew = $('#sidebarNewChat');
-    if (sidebarNew) sidebarNew.onclick = () => {
-        const c = newConversation();
-        renderChat();
-        renderHistory();
-        closeSidebar();
-    };
-
+    if (sidebarNew) sidebarNew.onclick = () => { newConversation(); renderChat(); renderHistory(); closeSidebar(); };
     const headerNew = $('#newChatBtn');
-    if (headerNew) headerNew.onclick = () => {
-        const c = newConversation();
-        renderChat();
-        renderHistory();
-    };
+    if (headerNew) headerNew.onclick = () => { newConversation(); renderChat(); renderHistory(); };
 
-    /* ============================================================
-       ISLAND
-       ============================================================ */
-
-    const island     = $('#island');
+    /* -------- island -------- */
+    const island = $('#island');
     const islandText = $('#islandText');
     const islandStat = $('#islandStatus');
     function setIsland(state, text, status) {
@@ -216,13 +164,9 @@
         island.classList.toggle('expanded', Boolean(status));
     }
 
-    /* ============================================================
-       STREAMING DISPATCHER
-       ============================================================ */
-
+    /* -------- streaming -------- */
     let nextId = 1;
     const streams = new Map();
-
     window.__xenonToken = (id, piece) => { const s = streams.get(id); if (s) s.onToken(piece); };
     window.__xenonDone  = (id) => { const s = streams.get(id); streams.delete(id); if (s) s.onDone(); };
     window.__xenonError = (id, msg) => { const s = streams.get(id); streams.delete(id); if (s) s.onError(msg); };
@@ -230,7 +174,7 @@
     window.__xenonDownload = (id, pct, done, total, finished) => {
         const el = document.querySelector('[data-dl="' + id + '"]');
         if (!el) return;
-        const bar  = el.querySelector('.bar > i');
+        const bar = el.querySelector('.bar > i');
         const meta = el.querySelector('.meta');
         if (bar) bar.style.width = pct + '%';
         const mb  = (done / 1048576).toFixed(1);
@@ -247,19 +191,27 @@
         if (el) el.querySelector('.meta').textContent = 'Failed: ' + msg;
     };
 
-    /* ============================================================
-       CHAT
-       ============================================================ */
-
+    /* -------- chat -------- */
     const messages = $('#messages');
     const promptEl = $('#prompt');
     const sendBtn  = $('#send');
     let generating = false;
 
+    function showEmptyState(title, sub, icon) {
+        if (!messages) return;
+        messages.innerHTML = '';
+        const d = document.createElement('div');
+        d.className = 'xl-empty';
+        d.innerHTML =
+            '<div class="xl-empty-icon"><i class="' + (icon || 'fa-solid fa-comment') + '"></i></div>' +
+            '<div class="xl-empty-title">' + escapeHtml(title || '') + '</div>' +
+            '<div class="xl-empty-sub">' + escapeHtml(sub || '') + '</div>';
+        messages.appendChild(d);
+    }
+
     function renderChat() {
         const c = currentConversation();
         if (!messages) return;
-
         if (!c.messages.length) {
             const models = JSON.parse(window.Xenon.listModels());
             const active = models.find(m => m.active && m.ready);
@@ -270,7 +222,6 @@
             );
             return;
         }
-
         messages.innerHTML = '';
         for (const m of c.messages) {
             const el = document.createElement('div');
@@ -281,27 +232,18 @@
         scrollBottom();
     }
 
-    function showEmptyState(title, sub, icon) {
-        if (!messages) return;
-        messages.innerHTML = '';
-        const d = document.createElement('div');
-        d.className = 'xl-empty';
-        d.innerHTML =
-            '<div class="xl-empty-icon"><i class="' + (icon || 'fa-solid fa-comment') + '"></i></div>' +
-            '<div class="xl-empty-title">' + (title || '') + '</div>' +
-            '<div class="xl-empty-sub">' + (sub || '') + '</div>';
-        messages.appendChild(d);
-    }
-
     function appendMessage(role, text) {
         const c = currentConversation();
         c.messages.push({ role, text, ts: Date.now() });
         updateTitleFromFirstMessage(c);
         return c;
     }
-
     function scrollBottom() {
-        if (messages) requestAnimationFrame(() => messages.scrollTop = messages.scrollHeight);
+        if (!messages) return;
+        requestAnimationFrame(() => {
+            messages.scrollTop = messages.scrollHeight;
+            setTimeout(() => { messages.scrollTop = messages.scrollHeight; }, 60);
+        });
     }
 
     if (promptEl) {
@@ -329,19 +271,17 @@
         promptEl.style.height = 'auto';
         if (sendBtn) sendBtn.disabled = true;
 
-        /* clear empty state and add user bubble */
         const empt = messages.querySelector('.xl-empty'); if (empt) empt.remove();
+
         const userEl = document.createElement('div');
         userEl.className = 'xl-bubble user';
         userEl.textContent = text;
         messages.appendChild(userEl);
         scrollBottom();
 
-        /* persist user message */
         appendMessage('user', text);
         persistActive();
 
-        /* assistant placeholder */
         const asstEl = document.createElement('div');
         asstEl.className = 'xl-bubble assistant typing';
         messages.appendChild(asstEl);
@@ -362,8 +302,7 @@
 
         streams.set(id, {
             onToken: piece => {
-                acc += piece;
-                tokens++;
+                acc += piece; tokens++;
                 asstEl.textContent = acc;
                 scrollBottom();
                 setIsland('generating', 'Generating…', tokens + ' tok');
@@ -396,13 +335,9 @@
         }
     });
 
-    /* ============================================================
-       MODELS
-       ============================================================ */
-
+    /* -------- models -------- */
     async function loadModels() {
-        const list = $('#modelList');
-        if (!list) return;
+        const list = $('#modelList'); if (!list) return;
         let models;
         try { models = JSON.parse(window.Xenon.listModels()); }
         catch (_) { models = []; }
@@ -426,7 +361,10 @@
             el.innerHTML =
                 '<div class="xl-model-head">' +
                     '<div class="xl-model-icon"><i class="fa-solid fa-microchip"></i></div>' +
-                    '<div class="xl-model-title">' + m.name + '</div>' +
+                    '<div class="xl-model-title">' +
+                        escapeHtml(m.name) +
+                        '<div class="xl-model-cat">' + escapeHtml(m.category || '') + '</div>' +
+                    '</div>' +
                     (m.active ? '<span class="star"><i class="fa-solid fa-star"></i></span>' : '') +
                 '</div>' +
                 '<div class="meta">' +
@@ -480,7 +418,6 @@
         const models = JSON.parse(window.Xenon.listModels());
         const active = models.find(m => m.active && m.ready);
 
-        /* header + sidebar status */
         const headerModel = $('#headerModel');
         if (headerModel) {
             headerModel.classList.remove('ready', 'busy');
@@ -488,37 +425,28 @@
                 active ? active.name : 'No model';
             if (active) headerModel.classList.add('ready');
         }
-
         const sideModel = $('#sidebarModel');
         if (sideModel) {
             sideModel.innerHTML = active
-                ? '<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ' + active.name
+                ? '<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ' + escapeHtml(active.name)
                 : '<i class="fa-solid fa-circle-notch"></i> No model loaded';
         }
-
         if (!active) {
             setIsland(null, 'XenonLabs', 'No model');
             renderChat();
             return;
         }
-
         setIsland('generating', 'Loading…', '');
         const path = window.Xenon.modelPath(active.filename);
         setTimeout(() => {
             const rc = window.Xenon.loadModel(path);
-            if (rc === 0) {
-                setIsland('ready', active.name, '');
-            } else {
-                setIsland('error', 'Load failed', 'code ' + rc);
-            }
+            if (rc === 0) setIsland('ready', active.name, '');
+            else setIsland('error', 'Load failed', 'code ' + rc);
             renderChat();
         }, 40);
     }
 
-    /* ============================================================
-       SETTINGS
-       ============================================================ */
-
+    /* -------- settings -------- */
     function bindRange(id, outId, fmt) {
         const el  = document.getElementById(id);
         const out = document.getElementById(outId);
@@ -527,7 +455,6 @@
         el.addEventListener('input', update);
         update();
     }
-
     const DEFAULTS = {
         maxTokens: 256, temperature: 0.7,
         topP: 0.95, topK: 40, repeatPenalty: 1.10,
@@ -535,10 +462,7 @@
         theme: 'dark', autoScroll: true, streaming: true,
         system: 'You are a helpful assistant.',
     };
-
-    function applyTheme(theme) {
-        document.body.dataset.theme = theme || 'dark';
-    }
+    function applyTheme(theme) { document.body.dataset.theme = theme || 'dark'; }
 
     function loadSettings() {
         const s = JSON.parse(window.Xenon.getSettings());
@@ -551,24 +475,20 @@
             autoScroll:    store.getItem('xenon.autoScroll') !== '0',
             streaming:     store.getItem('xenon.streaming') !== '0',
         };
-
-        $('#sMax').value    = s.maxTokens;
-        $('#sTemp').value   = Math.round(s.temperature * 100);
-        $('#sTopP').value   = Math.round(s.topP * 100);
-        $('#sTopK').value   = s.topK;
-        $('#sRep').value    = Math.round(local.repeatPenalty * 100);
-        $('#sThreads').value = local.threads;
-        $('#sCtx').value    = local.ctx;
-        $('#sSeed').value   = local.seed;
-        $('#sSystem').value = s.system;
-
-        $('#swAutoScroll').checked = local.autoScroll;
-        $('#swStream').checked     = local.streaming;
-
+        if ($('#sMax'))    $('#sMax').value    = s.maxTokens;
+        if ($('#sTemp'))   $('#sTemp').value   = Math.round(s.temperature * 100);
+        if ($('#sTopP'))   $('#sTopP').value   = Math.round(s.topP * 100);
+        if ($('#sTopK'))   $('#sTopK').value   = s.topK;
+        if ($('#sRep'))    $('#sRep').value    = Math.round(local.repeatPenalty * 100);
+        if ($('#sThreads'))$('#sThreads').value= local.threads;
+        if ($('#sCtx'))    $('#sCtx').value    = local.ctx;
+        if ($('#sSeed'))   $('#sSeed').value   = local.seed;
+        if ($('#sSystem')) $('#sSystem').value = s.system;
+        if ($('#swAutoScroll')) $('#swAutoScroll').checked = local.autoScroll;
+        if ($('#swStream'))     $('#swStream').checked     = local.streaming;
         applyTheme(local.theme);
         $$('#themeSegment button').forEach(b =>
             b.classList.toggle('active', b.dataset.theme === local.theme));
-
         bindRange('sMax',  'oMax');
         bindRange('sTemp','oTemp', v => (v / 100).toFixed(2));
         bindRange('sTopP','oTopP', v => (v / 100).toFixed(2));
@@ -579,30 +499,22 @@
         bindRange('sSeed','oSeed');
     }
 
-    /* theme segment */
     $$('#themeSegment button').forEach(b => b.addEventListener('click', () => {
         $$('#themeSegment button').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         applyTheme(b.dataset.theme);
         store.setItem('xenon.theme', b.dataset.theme);
     }));
-
-    /* system prompt presets */
     $$('.xl-chip').forEach(chip => chip.addEventListener('click', () => {
-        const ta = $('#sSystem');
-        if (ta) ta.value = chip.dataset.preset;
+        const ta = $('#sSystem'); if (ta) ta.value = chip.dataset.preset;
     }));
-
-    /* switches */
     const swAutoScroll = $('#swAutoScroll');
     if (swAutoScroll) swAutoScroll.addEventListener('change', e =>
         store.setItem('xenon.autoScroll', e.target.checked ? '1' : '0'));
-
     const swStream = $('#swStream');
     if (swStream) swStream.addEventListener('change', e =>
         store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
 
-    /* save */
     const saveBtn = $('#save');
     if (saveBtn) saveBtn.onclick = () => {
         window.Xenon.saveSettings(
@@ -611,20 +523,14 @@
             +$('#sTopP').value / 100,
             +$('#sTopK').value,
             $('#sSystem').value);
-
         store.setItem('xenon.repeatPenalty', (+$('#sRep').value / 100).toFixed(2));
         store.setItem('xenon.threads',       String(+$('#sThreads').value));
         store.setItem('xenon.ctx',           String(+$('#sCtx').value));
         store.setItem('xenon.seed',          String(+$('#sSeed').value));
-
         const m = $('#savedMsg');
-        if (m) {
-            m.innerHTML = '<i class="fa-solid fa-check"></i> Saved';
-            setTimeout(() => m.textContent = '', 1500);
-        }
+        if (m) { m.innerHTML = '<i class="fa-solid fa-check"></i> Saved'; setTimeout(() => m.textContent = '', 1500); }
     };
 
-    /* danger zone */
     const clearBtn = $('#clearHistory');
     if (clearBtn) clearBtn.onclick = () => {
         if (!confirm('Delete all conversations? This cannot be undone.')) return;
@@ -635,7 +541,6 @@
         renderHistory();
         renderChat();
     };
-
     const resetBtn = $('#resetSettings');
     if (resetBtn) resetBtn.onclick = () => {
         if (!confirm('Reset all settings to defaults?')) return;
@@ -647,15 +552,10 @@
             .forEach(k => store.removeItem(k));
         loadSettings();
     };
-
-    /* refresh models button (topbar of Models view) */
     const refreshBtn = $('#refreshModelsBtn');
     if (refreshBtn) refreshBtn.onclick = () => loadModels();
 
-    /* ============================================================
-       BOOT
-       ============================================================ */
-
+    /* -------- boot -------- */
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }
         try { await loadModels(); } catch (e) { showError('models: ' + e); }

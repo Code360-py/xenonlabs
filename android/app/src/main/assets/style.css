@@ -692,3 +692,12 @@ body.xl-app {
     display: flex; align-items: center; gap: 6px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* Model card category sub-line */
+.xl-model-cat {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--fg-dim);
+    margin-top: 3px;
+    line-height: 1.3;
+}

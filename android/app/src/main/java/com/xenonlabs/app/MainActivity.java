@@ -107,6 +107,7 @@ public class MainActivity extends AppCompatActivity {
                 boolean ready = f.exists() && bytes > m.approxBytes * 9 / 10;
                 JSONObject o = new JSONObject();
                 o.put("name", m.name);
+                o.put("category", m.category);
                 o.put("filename", m.filename);
                 o.put("url", m.url);
                 o.put("approxBytes", m.approxBytes);

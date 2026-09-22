@@ -278,6 +278,12 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
         llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     /* --- decode prompt at positions 0..N-1 --- */
+    /* Compute the starting position for this run.
+     * When continuing a conversation, pick up where the last run left off.
+     * When starting fresh, begin at 0 and clear keep_context. */
+    int use_n_past = c->keep_context ? c->n_past : 0;
+    c->keep_context = 0;
+
     int n_past = use_n_past;
     struct llama_batch pb = make_batch(toks, n_prompt, n_past);
     int rc = llama_decode(c->ctx, pb);

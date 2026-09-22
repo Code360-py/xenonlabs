@@ -37,19 +37,30 @@
 
     /* ---------- toast ---------- */
     let toastTimer = null;
+    let toastHideTimer = null;
     function toast(msg, icon) {
+        /* Wipe any existing toast so back-to-back calls don't stack */
         let el = document.getElementById('xlToast');
-        if (!el) {
-            el = document.createElement('div');
-            el.id = 'xlToast';
-            el.className = 'xl-toast';
-            document.body.appendChild(el);
-        }
+        if (el) el.remove();
+
+        el = document.createElement('div');
+        el.id = 'xlToast';
+        el.className = 'xl-toast';
         el.innerHTML = '<i class="' + (icon || 'fa-solid fa-circle-check') + '"></i>' +
                        '<span>' + escapeHtml(msg) + '</span>';
+        document.body.appendChild(el);
+
+        /* force layout so the .show transition runs */
+        void el.offsetWidth;
         requestAnimationFrame(() => el.classList.add('show'));
+
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+        clearTimeout(toastHideTimer);
+
+        toastTimer = setTimeout(() => {
+            el.classList.remove('show');
+            toastHideTimer = setTimeout(() => { el.remove(); }, 220);
+        }, 1800);
     }
 
     /* ---------- clipboard ---------- */

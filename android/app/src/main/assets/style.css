@@ -1,25 +1,33 @@
-/* XenonLabs — dark iOS-style UI */
+/* ============================================================
+   XenonLabs — iOS-style dark UI
+   Layout: [island floating] + [main: topbar + content] + [tabbar]
+   ============================================================ */
 
 :root {
-    --bg:        #000;
-    --bg-2:      #1c1c1e;
-    --bg-3:      #2c2c2e;
-    --bg-4:      #3a3a3c;
-    --fg:        #fff;
-    --fg-dim:    #8e8e93;
-    --fg-faint:  #48484a;
-    --accent:    #0a84ff;
-    --accent-2:  #0066cc;
-    --bubble-in: #262629;
+    --bg:       #000;
+    --bg-2:     #1c1c1e;
+    --bg-3:     #2c2c2e;
+    --bg-4:     #3a3a3c;
+    --fg:       #fff;
+    --fg-dim:   #8e8e93;
+    --fg-faint: #48484a;
+    --accent:   #0a84ff;
+    --accent-2: #0066cc;
+    --green:    #30d158;
+    --red:      #ff453a;
+    --bubble-in:#262629;
     --bubble-out:#0a84ff;
-    --border:    rgba(255,255,255,.08);
-    --island-h:  34px;
-    --tabbar-h:  72px;
-    --safe-top:  env(safe-area-inset-top, 0px);
-    --safe-bot:  env(safe-area-inset-bottom, 0px);
+    --border:   rgba(255,255,255,.08);
+
+    --island-h: 34px;
+    --topbar-h: 52px;
+    --tabbar-h: 60px;
+
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bot: env(safe-area-inset-bottom, 0px);
 }
 
-* { -webkit-tap-highlight-color: transparent; }
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 
 html, body {
     margin: 0; padding: 0;
@@ -43,14 +51,28 @@ body.xl-app {
     height: 100dvh;
 }
 
-/* Island */
+/* ------------------------------------------------------------
+   Main container — reserves space for the floating island
+   ------------------------------------------------------------ */
+
+.xl-main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    /* island sits above the topbar; push topbar down so they don't collide */
+    padding-top: calc(var(--safe-top) + var(--island-h) + 6px);
+}
+
+/* ------------------------------------------------------------
+   Dynamic Island
+   ------------------------------------------------------------ */
 
 .xl-island {
-    position: fixed;
+    position: absolute;
     top: calc(var(--safe-top) + 6px);
     left: 50%;
     transform: translateX(-50%);
-    z-index: 1000;
+    z-index: 100;
     pointer-events: none;
 }
 .xl-island-inner {
@@ -66,30 +88,33 @@ body.xl-app {
                 background .2s;
 }
 .xl-island.expanded .xl-island-inner {
-    min-width: 240px;
-    padding: 0 20px;
-    background: #0a0a0a;
+    min-width: 240px; padding: 0 20px; background: #0a0a0a;
 }
 .xl-island.generating .xl-island-inner {
     background: linear-gradient(90deg, #0a0a0a, #141a2a, #0a0a0a);
     background-size: 200% 100%;
     animation: shimmer 2s linear infinite;
 }
-@keyframes shimmer { 0% { background-position: 0% 0; } 100% { background-position: 200% 0; } }
+@keyframes shimmer {
+    0%   { background-position: 0% 0; }
+    100% { background-position: 200% 0; }
+}
 
 .xl-island-icon {
     width: 8px; height: 8px; border-radius: 50%;
-    background: var(--fg-faint);
-    flex-shrink: 0;
+    background: var(--fg-faint); flex-shrink: 0;
 }
-.xl-island.ready      .xl-island-icon { background: #30d158; }
+.xl-island.ready      .xl-island-icon { background: var(--green); }
 .xl-island.generating .xl-island-icon {
     background: var(--accent);
     box-shadow: 0 0 8px var(--accent);
     animation: pulse 1.4s ease-in-out infinite;
 }
-.xl-island.error      .xl-island-icon { background: #ff453a; }
-@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: .7; } }
+.xl-island.error      .xl-island-icon { background: var(--red); }
+@keyframes pulse {
+    0%,100% { transform: scale(1);   opacity: 1; }
+    50%     { transform: scale(1.3); opacity: .7; }
+}
 
 .xl-island-text {
     font-size: 13px; font-weight: 600;
@@ -101,47 +126,135 @@ body.xl-app {
     white-space: nowrap;
 }
 
-/* Views */
+/* ------------------------------------------------------------
+   Top bar — per-view navigation header
+   ------------------------------------------------------------ */
 
-.xl-views {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-    padding-top: calc(var(--safe-top) + var(--island-h) + 16px);
-    padding-bottom: calc(var(--tabbar-h) + var(--safe-bot) + 8px);
+.xl-topbar {
+    flex-shrink: 0;
+    height: var(--topbar-h);
+    display: grid;
+    grid-template-columns: 56px 1fr 56px;
+    align-items: center;
+    padding: 0 8px;
+    background: var(--bg);
+    border-bottom: .5px solid var(--border);
 }
+
+.xl-topbar-left  { display: flex; justify-content: flex-start; }
+.xl-topbar-right { display: flex; justify-content: flex-end;   }
+
+.xl-topbar-btn {
+    width: 36px; height: 36px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--accent);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background .15s, transform .12s;
+}
+.xl-topbar-btn:active {
+    background: rgba(255,255,255,.06);
+    transform: scale(.94);
+}
+
+.xl-topbar-title {
+    text-align: center;
+    overflow: hidden;
+}
+.xl-topbar-title-main {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -.2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.15;
+}
+.xl-topbar-title-sub {
+    font-size: 11px;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    margin-top: 1px;
+}
+
+/* ------------------------------------------------------------
+   Views
+   ------------------------------------------------------------ */
+
 .xl-view {
     position: absolute;
     inset: 0;
-    display: flex; flex-direction: column;
-    opacity: 0; pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    pointer-events: none;
     transition: opacity .15s ease;
 }
 .xl-view.active { opacity: 1; pointer-events: auto; }
 
 .xl-scroll {
-    flex: 1; overflow-y: auto;
+    flex: 1;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 8px 16px 24px;
 }
+
+.xl-gap { height: 24px; }
+
+/* ------------------------------------------------------------
+   Sections
+   ------------------------------------------------------------ */
+
 .xl-section {
     font-size: 12px; color: var(--fg-dim);
     text-transform: uppercase;
     letter-spacing: .06em;
-    padding: 12px 4px 8px;
+    padding: 16px 4px 8px;
     font-weight: 600;
     margin: 0;
 }
 
-/* Chat */
+/* ------------------------------------------------------------
+   Chat
+   ------------------------------------------------------------ */
 
 .xl-messages {
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 8px 14px;
+    padding: 8px 14px 12px;
     scroll-behavior: smooth;
 }
+
+.xl-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--fg-dim);
+}
+.xl-empty-icon {
+    width: 72px; height: 72px;
+    border-radius: 20px;
+    background: var(--bg-2);
+    display: grid; place-items: center;
+    font-size: 32px;
+    color: var(--accent);
+    margin-bottom: 16px;
+}
+.xl-empty-title { font-size: 17px; font-weight: 600; color: var(--fg); }
+.xl-empty-sub   { font-size: 13px; margin-top: 4px; }
+
 .xl-bubble {
     max-width: 80%;
     margin: 3px 0;
@@ -150,7 +263,7 @@ body.xl-app {
     word-wrap: break-word;
     white-space: pre-wrap;
     font-size: 16px;
-    line-height: 1.35;
+    line-height: 1.4;
     animation: bubbleIn .22s cubic-bezier(.2,.9,.3,1);
 }
 @keyframes bubbleIn {
@@ -180,6 +293,10 @@ body.xl-app {
     margin: 8px auto;
     padding: 2px 12px;
     animation: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
 }
 .xl-bubble.typing::after {
     content: "▍";
@@ -189,23 +306,24 @@ body.xl-app {
 }
 @keyframes caret { 50% { opacity: 0; } }
 
-/* Composer */
+/* ------------------------------------------------------------
+   Composer
+   ------------------------------------------------------------ */
 
-.xl-composer-wrap {
-    padding: 6px 10px;
-    padding-bottom: calc(6px + var(--safe-bot));
-    background: rgba(10,10,10,.72);
-    backdrop-filter: saturate(180%) blur(24px);
-    -webkit-backdrop-filter: saturate(180%) blur(24px);
+.xl-composer {
+    flex-shrink: 0;
+    padding: 8px 10px;
+    background: var(--bg-2);
     border-top: .5px solid var(--border);
 }
-.xl-composer {
+.xl-composer form {
     display: flex;
     align-items: flex-end;
     gap: 6px;
 }
-.xl-icon-btn, .xl-send-btn {
-    width: 34px; height: 34px;
+
+.xl-icon-btn {
+    width: 36px; height: 36px;
     flex-shrink: 0;
     border: none;
     border-radius: 50%;
@@ -213,22 +331,27 @@ body.xl-app {
     color: var(--fg);
     display: grid; place-items: center;
     cursor: pointer;
+    font-size: 15px;
     transition: transform .12s, background .15s, opacity .15s;
-    font-size: 14px;
 }
 .xl-icon-btn:active { background: var(--bg-4); transform: scale(.92); }
-.xl-send-btn { background: var(--accent); color: #fff; }
-.xl-send-btn:disabled { background: var(--bg-4); color: var(--fg-faint); cursor: default; }
-.xl-send-btn:not(:disabled):active { transform: scale(.92); }
+.xl-icon-btn.xl-send { background: var(--accent); color: #fff; }
+.xl-icon-btn.xl-send:disabled {
+    background: var(--bg-4);
+    color: var(--fg-faint);
+    cursor: default;
+}
+.xl-icon-btn.xl-send:not(:disabled):active { transform: scale(.92); }
+
 .xl-composer textarea {
     flex: 1;
-    min-height: 34px;
+    min-height: 36px;
     max-height: 130px;
     resize: none;
     background: var(--bg-3);
     color: var(--fg);
     border: .5px solid var(--border);
-    border-radius: 17px;
+    border-radius: 18px;
     padding: 8px 14px;
     font: inherit;
     font-size: 16px;
@@ -236,43 +359,102 @@ body.xl-app {
     outline: none;
     transition: border-color .15s, background .15s;
 }
-.xl-composer textarea:focus { border-color: var(--accent); background: var(--bg-2); }
+.xl-composer textarea:focus {
+    border-color: var(--accent);
+    background: var(--bg-3);
+}
 .xl-composer textarea::placeholder { color: var(--fg-dim); }
 
-/* Models */
+/* ------------------------------------------------------------
+   Bottom tab bar
+   ------------------------------------------------------------ */
+
+.xl-tabbar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: space-around;
+    height: var(--tabbar-h);
+    background: #0d0d0f;
+    border-top: .5px solid var(--border);
+    padding-bottom: var(--safe-bot);
+}
+.xl-tab {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--fg-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color .15s;
+}
+.xl-tab i { font-size: 20px; }
+.xl-tab.active { color: var(--accent); }
+.xl-tab:active { color: var(--fg); }
+
+/* ------------------------------------------------------------
+   Models
+   ------------------------------------------------------------ */
 
 .xl-model-list { display: flex; flex-direction: column; gap: 10px; }
+
 .xl-model {
     background: var(--bg-2);
-    border-radius: 14px;
-    padding: 14px 16px;
+    border-radius: 16px;
+    padding: 16px;
+    transition: background .15s;
 }
 .xl-model.active {
     background: linear-gradient(180deg, rgba(10,132,255,.14), rgba(10,132,255,.04));
     box-shadow: inset 0 0 0 .5px var(--accent);
 }
-.xl-model h3 {
-    margin: 0 0 3px;
-    font-size: 15px;
-    font-weight: 600;
+.xl-model-head {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    margin-bottom: 10px;
 }
-.xl-model h3 .star { color: var(--accent); font-size: 13px; }
+.xl-model-icon {
+    width: 40px; height: 40px;
+    border-radius: 11px;
+    background: var(--bg-3);
+    display: grid; place-items: center;
+    font-size: 17px;
+    color: var(--fg-dim);
+    flex-shrink: 0;
+}
+.xl-model.active .xl-model-icon {
+    background: linear-gradient(135deg, var(--accent), #5e5ce6);
+    color: #fff;
+}
+.xl-model-title {
+    font-size: 15px; font-weight: 600; flex: 1;
+    line-height: 1.25;
+}
+.xl-model .star { color: var(--accent); font-size: 12px; }
+
 .xl-model .meta {
     font-size: 12px;
     color: var(--fg-dim);
     margin-bottom: 10px;
     font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 .xl-model .bar {
     height: 4px;
     border-radius: 2px;
     background: var(--bg-4);
     overflow: hidden;
-    margin: 6px 0 10px;
+    margin: 6px 0 12px;
     display: none;
 }
 .xl-model .bar.on { display: block; }
@@ -287,8 +469,8 @@ body.xl-app {
 .xl-model .actions { display: flex; gap: 8px; }
 .xl-model .actions button {
     flex: 1;
-    padding: 9px 12px;
-    border-radius: 10px;
+    padding: 10px 12px;
+    border-radius: 11px;
     border: none;
     background: var(--bg-3);
     color: var(--fg);
@@ -296,18 +478,25 @@ body.xl-app {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background .15s, opacity .15s;
 }
 .xl-model .actions button.primary { background: var(--accent); color: #fff; }
 .xl-model .actions button:disabled { opacity: .45; cursor: default; }
 .xl-model .actions button:not(:disabled):active { background: var(--bg-4); }
 
-/* Settings */
+/* ------------------------------------------------------------
+   Settings
+   ------------------------------------------------------------ */
 
 .xl-card {
     background: var(--bg-2);
-    border-radius: 14px;
+    border-radius: 16px;
     padding: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 .xl-row {
     display: flex;
@@ -316,6 +505,8 @@ body.xl-app {
     font-size: 15px;
     padding: 6px 0;
 }
+.xl-row span { display: inline-flex; align-items: center; gap: 10px; }
+.xl-row-icon { color: var(--fg-dim); width: 18px; }
 .xl-row output {
     color: var(--fg-dim);
     font-variant-numeric: tabular-nums;
@@ -324,6 +515,13 @@ body.xl-app {
 .xl-card .form-range {
     background: var(--bg-4);
     margin: 4px 0 12px;
+    height: 4px;
+    border-radius: 2px;
+}
+.xl-card .form-range::-webkit-slider-thumb {
+    background: #fff;
+    width: 22px; height: 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.5);
 }
 .xl-textarea {
     background: var(--bg-3);
@@ -331,6 +529,7 @@ body.xl-app {
     border: none;
     border-radius: 10px;
     font-size: 15px;
+    padding: 12px;
     resize: vertical;
 }
 .xl-textarea:focus {
@@ -340,67 +539,35 @@ body.xl-app {
     border: 1px solid var(--accent);
 }
 .xl-save {
-    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 12px;
+    padding: 14px;
     border: none;
-    padding: 12px;
-    border-radius: 12px;
+    border-radius: 14px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
     font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background .15s, transform .12s;
 }
-.xl-save:active { background: var(--accent-2); }
+.xl-save:active { background: var(--accent-2); transform: scale(.98); }
 .xl-hint {
     font-size: 13px;
-    color: var(--accent);
+    color: var(--green);
     text-align: center;
     min-height: 18px;
     padding: 8px 0;
 }
-.xl-footer-space { height: 40px; }
 
-/* Tab bar */
-
-.xl-tabbar {
-    position: fixed;
-    left: 0; right: 0;
-    bottom: calc(var(--safe-bot) + 10px);
-    display: flex;
-    justify-content: center;
-    z-index: 900;
-    pointer-events: none;
-}
-.xl-tabbar-inner {
-    display: flex;
-    align-items: stretch;
-    gap: 2px;
-    padding: 4px;
-    background: rgba(28,28,30,.72);
-    backdrop-filter: saturate(180%) blur(24px);
-    -webkit-backdrop-filter: saturate(180%) blur(24px);
-    border-radius: 22px;
-    box-shadow: 0 0 0 .5px rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55);
-    pointer-events: auto;
-}
-.xl-tab {
-    width: 76px;
-    padding: 8px 4px 6px;
-    border: none;
-    background: transparent;
-    color: var(--fg-dim);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    font: inherit;
-    font-size: 10px;
-    font-weight: 500;
-    border-radius: 18px;
-    cursor: pointer;
-    transition: color .15s, background .15s;
-}
-.xl-tab i { font-size: 20px; }
-.xl-tab.active { color: var(--accent); background: rgba(10,132,255,.12); }
-.xl-tab:active { background: rgba(255,255,255,.06); }
-
-/* Sidebar */
+/* ------------------------------------------------------------
+   Sidebar
+   ------------------------------------------------------------ */
 
 .xl-scrim {
     position: fixed;
@@ -408,7 +575,7 @@ body.xl-app {
     background: rgba(0,0,0,.55);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
-    z-index: 1100;
+    z-index: 200;
     opacity: 0;
     animation: fadeIn .18s forwards;
 }
@@ -423,12 +590,12 @@ body.xl-app {
     bottom: 12px;
     width: 78vw;
     max-width: 320px;
-    background: rgba(28,28,30,.85);
+    background: rgba(28,28,30,.9);
     backdrop-filter: saturate(180%) blur(28px);
     -webkit-backdrop-filter: saturate(180%) blur(28px);
     border-radius: 24px;
     box-shadow: 0 0 0 .5px rgba(255,255,255,.12), 0 20px 60px rgba(0,0,0,.7);
-    z-index: 1101;
+    z-index: 201;
     display: flex;
     flex-direction: column;
     padding: 20px 0 16px;
@@ -478,9 +645,10 @@ body.xl-app {
     text-align: left;
     border-radius: 12px;
     cursor: pointer;
+    transition: background .15s;
 }
 .xl-sidebar-item:active { background: rgba(255,255,255,.08); }
-.xl-sidebar-item i { color: var(--fg-dim); flex-shrink: 0; width: 18px; }
+.xl-sidebar-item i { color: var(--fg-dim); flex-shrink: 0; width: 18px; font-size: 15px; }
 
 .xl-sidebar-foot {
     padding: 12px 20px 4px;
@@ -492,4 +660,7 @@ body.xl-app {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }

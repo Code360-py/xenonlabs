@@ -129,6 +129,18 @@
                 </div>
 
                 <div class="xl-row" style="margin-top:14px;">
+                    <span><i class="fa-solid fa-palette xl-row-icon"></i>Accent color</span>
+                </div>
+                <div class="xl-swatches" id="accentSwatches">
+                    <button data-accent="blue"    class="active" aria-label="Blue"></button>
+                    <button data-accent="purple"               aria-label="Purple"></button>
+                    <button data-accent="green"                aria-label="Green"></button>
+                    <button data-accent="orange"               aria-label="Orange"></button>
+                    <button data-accent="pink"                 aria-label="Pink"></button>
+                    <button data-accent="graphite"             aria-label="Graphite"></button>
+                </div>
+
+                <div class="xl-row" style="margin-top:14px;">
                     <span><i class="fa-solid fa-code xl-row-icon"></i>Render Markdown</span>
                     <label class="xl-switch"><input type="checkbox" id="swMarkdown" checked><i></i></label>
                 </div>
@@ -158,6 +170,17 @@
                 <i class="fa-solid fa-floppy-disk"></i> Save settings
             </button>
             <div id="savedMsg" class="xl-hint"></div>
+
+            <h6 class="xl-section">Backup</h6>
+            <div class="xl-card">
+                <button id="exportData" class="xl-secondary">
+                    <i class="fa-solid fa-file-export"></i> Export data (JSON)
+                </button>
+                <button id="importData" class="xl-secondary" style="margin-top:8px;">
+                    <i class="fa-solid fa-file-import"></i> Import from JSON
+                </button>
+                <input type="file" id="importFile" accept=".json,application/json" hidden>
+            </div>
 
             <h6 class="xl-section">Danger zone</h6>
             <div class="xl-card">
@@ -191,6 +214,10 @@
         <button id="sidebarNewChat" class="xl-sidebar-new">
             <i class="fa-solid fa-plus"></i> New chat
         </button>
+        <div class="xl-sidebar-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="search" id="historySearch" placeholder="Search chats" autocomplete="off">
+        </div>
     </div>
     <div class="xl-sidebar-section-title">Recent</div>
     <div id="historyList" class="xl-history"></div>

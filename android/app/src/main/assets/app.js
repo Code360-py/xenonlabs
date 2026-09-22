@@ -1,7 +1,11 @@
-/* XenonLabs UI — single source of truth */
+/* ============================================================
+   XenonLabs — UI controller
+   Single source of truth for the frontend.
+   ============================================================ */
 (function () {
     'use strict';
 
+    /* ---------- safe localStorage ---------- */
     const store = (() => {
         try { localStorage.setItem('_t','1'); localStorage.removeItem('_t'); return localStorage; }
         catch (_) {
@@ -16,11 +20,13 @@
 
     const $  = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
+    const $$a = s => Array.from(document.querySelectorAll(s));
 
     function escapeHtml(s) {
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
+    /* ---------- error surface ---------- */
     function showError(msg) {
         const box = document.createElement('div');
         box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:80px;background:#7a0000;color:#fff;padding:10px;border-radius:8px;font-size:12px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
@@ -29,32 +35,39 @@
     }
     window.addEventListener('error', e => showError('JS: ' + e.message));
 
-    /* ---------- thinking indicator ---------- */
-    function setHeaderThinking(on) {
-        const hm = document.getElementById('headerModel');
-        if (!hm) return;
-        const existing = hm.querySelector('.thinking-dots');
-        if (on && !existing) {
-            const dots = document.createElement('span');
-            dots.className = 'thinking-dots';
-            dots.innerHTML = '<i></i><i></i><i></i>';
-            hm.appendChild(dots);
-        } else if (!on && existing) {
-            existing.remove();
+    /* ---------- toast ---------- */
+    let toastTimer = null;
+    function toast(msg, icon) {
+        let el = document.getElementById('xlToast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'xlToast';
+            el.className = 'xl-toast';
+            document.body.appendChild(el);
         }
+        el.innerHTML = '<i class="' + (icon || 'fa-solid fa-circle-check') + '"></i>' +
+                       '<span>' + escapeHtml(msg) + '</span>';
+        requestAnimationFrame(() => el.classList.add('show'));
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
     }
-    function showThinkingInBubble(textEl) {
-        if (!textEl) return;
-        textEl.innerHTML = '';
-        const t = document.createElement('div');
-        t.className = 'xl-thinking';
-        t.innerHTML = '<span></span><span></span><span></span>';
-        textEl.appendChild(t);
-    }
-    function clearThinkingInBubble(textEl) {
-        if (!textEl) return;
-        const t = textEl.querySelector('.xl-thinking');
-        if (t) t.remove();
+
+    /* ---------- clipboard ---------- */
+    function copyText(t) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(t);
+                return;
+            }
+        } catch (_) {}
+        const ta = document.createElement('textarea');
+        ta.value = t;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
     }
 
     /* ---------- markdown ---------- */
@@ -96,39 +109,123 @@
         });
     }
 
-    /* ---------- clipboard ---------- */
-    function copyText(t) {
-        try {
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(t);
-                return;
-            }
-        } catch (_) {}
-        const ta = document.createElement('textarea');
-        ta.value = t;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        try { document.execCommand('copy'); } catch (_) {}
-        document.body.removeChild(ta);
+    /* ---------- thinking indicator ---------- */
+    function setHeaderThinking(on) {
+        const hm = document.getElementById('headerModel');
+        if (!hm) return;
+        const existing = hm.querySelector('.thinking-dots');
+        if (on && !existing) {
+            const dots = document.createElement('span');
+            dots.className = 'thinking-dots';
+            dots.innerHTML = '<i></i><i></i><i></i>';
+            hm.appendChild(dots);
+        } else if (!on && existing) {
+            existing.remove();
+        }
+    }
+    function showThinkingInBubble(textEl) {
+        if (!textEl) return;
+        textEl.innerHTML = '';
+        const t = document.createElement('div');
+        t.className = 'xl-thinking';
+        t.innerHTML = '<span></span><span></span><span></span>';
+        textEl.appendChild(t);
+    }
+    function clearThinkingInBubble(textEl) {
+        if (!textEl) return;
+        const t = textEl.querySelector('.xl-thinking');
+        if (t) t.remove();
     }
 
-    /* ---------- toast ---------- */
-    let toastTimer = null;
-    function toast(msg, icon) {
-        let el = document.getElementById('xlToast');
-        if (!el) {
-            el = document.createElement('div');
-            el.id = 'xlToast';
-            el.className = 'xl-toast';
-            document.body.appendChild(el);
+    /* ---------- TTS ---------- */
+    let currentSpeakingId = null;
+    let nextTtsId = 1;
+
+    window.__xenonTtsState = state => {
+        $$a('.xl-msg-actions .act-speak').forEach(btn => {
+            btn.classList.remove('speaking');
+            btn.innerHTML = '<i class="fa-solid fa-volume-high"></i> Speak';
+        });
+        if (state === 'speaking' && currentSpeakingId) {
+            const btn = document.querySelector('#' + currentSpeakingId + ' .act-speak');
+            if (btn) {
+                btn.classList.add('speaking');
+                btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+            }
         }
-        el.innerHTML = '<i class="' + (icon || 'fa-solid fa-circle-check') + '"></i>' +
-                       '<span>' + escapeHtml(msg) + '</span>';
-        requestAnimationFrame(() => el.classList.add('show'));
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+        if (state === 'idle' || state === 'unavailable') {
+            currentSpeakingId = null;
+            if (state === 'unavailable') toast('Speech unavailable on this device', 'fa-solid fa-triangle-exclamation');
+        }
+    };
+
+    function speakRow(rowEl, textEl) {
+        const text = rowEl.dataset.raw || textEl.textContent || '';
+        if (!text.trim()) return;
+
+        const existingBtn = rowEl.querySelector('.act-speak.speaking');
+        if (existingBtn) {
+            try { window.Xenon.stopSpeaking(); } catch (_) {}
+            if (window.__xenonTtsState) window.__xenonTtsState('idle');
+            return;
+        }
+
+        try { window.Xenon.stopSpeaking(); } catch (_) {}
+        if (!rowEl.id) rowEl.id = 'xl-speak-' + (nextTtsId++);
+        currentSpeakingId = rowEl.id;
+
+        try { window.Xenon.speak(text); }
+        catch (e) { toast('Speech not available', 'fa-solid fa-triangle-exclamation'); currentSpeakingId = null; }
+    }
+
+    /* ---------- voice ---------- */
+    let voiceActive = false;
+    function setMic(state) {
+        const micBtn = document.getElementById('micBtn');
+        if (!micBtn) return;
+        micBtn.classList.remove('listening', 'processing');
+        if (state === 'listening') micBtn.classList.add('listening');
+        else if (state === 'processing') micBtn.classList.add('processing');
+    }
+    window.__xenonVoiceState = state => {
+        voiceActive = (state === 'listening');
+        setMic(state);
+        if (state === 'listening') toast('Listening…', 'fa-solid fa-microphone');
+        if (state === 'permission') toast('Allow microphone access');
+    };
+    window.__xenonVoiceText = text => {
+        voiceActive = false;
+        setMic('idle');
+        if (!text) return;
+        const el = document.getElementById('prompt');
+        if (!el) return;
+        const cur = el.value.trim();
+        el.value = cur ? (cur + ' ' + text) : text;
+        el.dispatchEvent(new Event('input'));
+        el.focus();
+    };
+    window.__xenonVoicePartial = text => {
+        const el = document.getElementById('prompt');
+        if (!el) return;
+        el.placeholder = text ? text : 'Message Xenon';
+    };
+    window.__xenonVoiceError = msg => {
+        voiceActive = false;
+        setMic('idle');
+        if (msg === 'no match' || msg === 'no speech') toast("Didn't catch that", 'fa-solid fa-microphone-slash');
+        else if (msg && msg !== 'client error') toast('Voice: ' + msg, 'fa-solid fa-triangle-exclamation');
+    };
+
+    /* ---------- island ---------- */
+    function setIsland(state, text, status) {
+        const island = $('#island');
+        if (!island) return;
+        island.classList.remove('ready','generating','error','expanded');
+        if (state) island.classList.add(state);
+        const t = $('#islandText'), s = $('#islandStatus');
+        if (t) t.textContent = text || 'XenonLabs';
+        if (s) s.textContent = status || '';
+        island.classList.toggle('expanded', Boolean(status));
     }
 
     /* ---------- conversations ---------- */
@@ -138,6 +235,7 @@
 
     let convs = loadConvs();
     let activeId = store.getItem(ACTIVE_KEY) || null;
+    let historyFilter = '';
 
     function findConv(id) { return convs.find(c => c.id === id); }
     function newConversation() {
@@ -180,11 +278,18 @@
 
     function renderHistory() {
         const list = $('#historyList'); if (!list) return;
-        if (!convs.length) {
-            list.innerHTML = '<div class="xl-history-empty">No conversations yet</div>';
+
+        let filtered = convs;
+        if (historyFilter) {
+            const q = historyFilter.toLowerCase();
+            filtered = convs.filter(c => (c.title || '').toLowerCase().includes(q));
+        }
+        if (!filtered.length) {
+            list.innerHTML = '<div class="xl-history-empty">' +
+                (historyFilter ? 'No matching chats' : 'No conversations yet') + '</div>';
             return;
         }
-        const sorted = convs.slice().sort((a, b) => b.updated - a.updated);
+        const sorted = filtered.slice().sort((a, b) => b.updated - a.updated);
         list.innerHTML = '';
         for (const c of sorted) {
             const el = document.createElement('div');
@@ -194,13 +299,13 @@
                 '<span class="xl-history-title">' + escapeHtml(c.title || 'New chat') + '</span>' +
                 '<span class="xl-history-time">' + relativeTime(c.updated) + '</span>' +
                 '<button class="del"><i class="fa-solid fa-xmark"></i></button>';
-            el.addEventListener('click', ev => {
-                if (ev.target.closest('.del')) return;
-                switchToConversation(c.id);
-            });
+            el.addEventListener('click', ev => { if (!ev.target.closest('.del')) switchToConversation(c.id); });
             el.querySelector('.del').addEventListener('click', ev => {
                 ev.stopPropagation();
-                if (confirm('Delete "' + (c.title || 'New chat') + '"?')) deleteConversation(c.id);
+                if (confirm('Delete "' + (c.title || 'New chat') + '"?')) {
+                    deleteConversation(c.id);
+                    toast('Conversation deleted');
+                }
             });
             list.appendChild(el);
         }
@@ -215,14 +320,16 @@
 
     /* ---------- tabs ---------- */
     function activateTab(name) {
-        $$('.xl-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-        $$('.xl-view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+        $$a('.xl-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+        $$a('.xl-view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     }
-    $$('.xl-tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+    $$a('.xl-tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
     /* ---------- sidebar ---------- */
     function openSidebar() {
         const scrim = $('#sidebarScrim'), sidebar = $('#sidebar');
+        const search = document.getElementById('historySearch');
+        if (search) { search.value = ''; historyFilter = ''; }
         if (scrim) scrim.hidden = false;
         if (sidebar) sidebar.hidden = false;
         renderHistory();
@@ -236,32 +343,21 @@
             if (scrim)   { scrim.hidden = true; scrim.classList.remove('closing'); }
         }, 220);
     }
-    const sbBtn = $('#sidebarBtn');
-    if (sbBtn) sbBtn.onclick = openSidebar;
-    const scrimEl = $('#sidebarScrim');
-    if (scrimEl) scrimEl.onclick = closeSidebar;
+    const sbBtn = $('#sidebarBtn'); if (sbBtn) sbBtn.onclick = openSidebar;
+    const scrimEl = $('#sidebarScrim'); if (scrimEl) scrimEl.onclick = closeSidebar;
     const sidebarNew = $('#sidebarNewChat');
-    if (sidebarNew) sidebarNew.onclick = () => {
-        newConversation(); renderChat(); renderHistory(); closeSidebar();
-    };
+    if (sidebarNew) sidebarNew.onclick = () => { newConversation(); renderChat(); renderHistory(); closeSidebar(); };
     const headerNew = $('#newChatBtn');
     if (headerNew) headerNew.onclick = () => {
         try { window.Xenon.stopSpeaking(); } catch (_) {}
         if (window.__xenonTtsState) window.__xenonTtsState('idle');
         newConversation(); renderChat(); renderHistory();
     };
-
-    /* ---------- island ---------- */
-    function setIsland(state, text, status) {
-        const island = $('#island');
-        if (!island) return;
-        island.classList.remove('ready','generating','error','expanded');
-        if (state) island.classList.add(state);
-        const t = $('#islandText'), s = $('#islandStatus');
-        if (t) t.textContent = text || 'XenonLabs';
-        if (s) s.textContent = status || '';
-        island.classList.toggle('expanded', Boolean(status));
-    }
+    const historySearch = document.getElementById('historySearch');
+    if (historySearch) historySearch.addEventListener('input', e => {
+        historyFilter = e.target.value.trim();
+        renderHistory();
+    });
 
     /* ---------- streaming dispatcher ---------- */
     let nextId = 1;
@@ -311,7 +407,6 @@
 
         if (opts.editable) {
             const actions = row.querySelector('.xl-msg-actions');
-            actions.style.display = '';
             const edit = document.createElement('button');
             edit.className = 'act-edit';
             edit.innerHTML = '<i class="fa-solid fa-pen"></i> Edit';
@@ -391,17 +486,17 @@
             else textEl.textContent = text;
         }
 
+        /* double-tap copy */
         let lastTap = 0;
         textEl.addEventListener('touchend', () => {
             const now = Date.now();
-            if (now - lastTap < 320) {
-                copyText(row.dataset.raw || textEl.textContent);
-                toast('Reply copied');
-            }
+            if (now - lastTap < 320) { copyText(row.dataset.raw || textEl.textContent); toast('Reply copied'); }
             lastTap = now;
         });
 
         const actions = row.querySelector('.xl-msg-actions');
+
+        /* Copy */
         const copyBtn = document.createElement('button');
         copyBtn.className = 'act-copy';
         copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy';
@@ -418,24 +513,22 @@
         };
         actions.appendChild(copyBtn);
 
+        /* Regenerate (last reply only) */
         if (opts.regenerable) {
             const regen = document.createElement('button');
             regen.className = 'act-regen';
             regen.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Regenerate';
-            regen.onclick = (e) => {
-                e.stopPropagation();
-                regenerateLast();
-            };
+            regen.onclick = (e) => { e.stopPropagation(); regenerateLast(); };
             actions.appendChild(regen);
         }
 
-        /* Speak button — present on every assistant reply */
+        /* Speak */
         const speakBtn = document.createElement('button');
         speakBtn.className = 'act-speak';
         speakBtn.innerHTML = '<i class="fa-solid fa-volume-high"></i> Speak';
         speakBtn.onclick = (e) => {
             e.stopPropagation();
-            speakRow(row, textEl);
+            try { speakRow(row, textEl); } catch (_) { toast('Speak unavailable'); }
         };
         actions.appendChild(speakBtn);
 
@@ -474,16 +567,10 @@
         const n = c.messages.length;
         for (let i = 0; i < n; i++) {
             const m = c.messages[i];
-            const editable = (m.role === 'user')
-                && (i === n - 2)
-                && (n >= 2)
-                && (c.messages[n - 1].role === 'assistant');
+            const editable = (m.role === 'user') && (i === n - 2) && (n >= 2) && (c.messages[n - 1].role === 'assistant');
             const regenerable = (m.role === 'assistant') && (i === n - 1);
-
-            if (m.role === 'user')
-                messages.appendChild(makeUserRow(m.text, { editable }));
-            else
-                messages.appendChild(makeAssistantRow(m.text, { regenerable }));
+            if (m.role === 'user') messages.appendChild(makeUserRow(m.text, { editable }));
+            else                   messages.appendChild(makeAssistantRow(m.text, { regenerable }));
         }
         scrollBottom();
     }
@@ -525,10 +612,6 @@
         messages.appendChild(asstRow);
         scrollBottom();
 
-        /* stop any speech currently playing */
-        try { window.Xenon.stopSpeaking(); } catch (_) {}
-        if (window.__xenonTtsState) window.__xenonTtsState('idle');
-
         generating = true;
         if (sendBtn) sendBtn.disabled = true;
         setIsland('generating', 'Thinking…', '0 tok');
@@ -545,10 +628,12 @@
         const id = nextId++;
         let acc = '';
         let tokens = 0;
+        let firstTokenAt = 0;
+        let lastDisplayAt = 0;
 
         streams.set(id, {
             onToken: piece => {
-                if (tokens === 0) clearThinkingInBubble(asstTextEl);
+                if (tokens === 0) { firstTokenAt = Date.now(); clearThinkingInBubble(asstTextEl); }
                 acc += piece; tokens++;
                 asstRow.dataset.raw = acc;
                 if (mdEnabled()) {
@@ -563,7 +648,15 @@
                     asstTextEl.textContent = acc;
                 }
                 scrollBottom();
-                setIsland('generating', 'Generating…', tokens + ' tok');
+
+                const now = Date.now();
+                if (now - lastDisplayAt > 200 || tokens < 5) {
+                    lastDisplayAt = now;
+                    const elapsed = firstTokenAt ? (now - firstTokenAt) / 1000 : 0;
+                    const tps = elapsed > 0.1 ? (tokens / elapsed).toFixed(1) : null;
+                    setIsland('generating', 'Generating…',
+                        tps ? (tokens + ' tok · ' + tps + ' tok/s') : (tokens + ' tok'));
+                }
             },
             onDone: () => {
                 clearThinkingInBubble(asstTextEl);
@@ -647,6 +740,17 @@
         sendPrompt(text);
     });
 
+    /* ---------- voice button ---------- */
+    const micBtn = document.getElementById('micBtn');
+    if (micBtn) micBtn.onclick = () => {
+        try {
+            if (voiceActive) window.Xenon.stopVoiceInput();
+            else             window.Xenon.startVoiceInput();
+        } catch (e) {
+            toast('Voice not available', 'fa-solid fa-triangle-exclamation');
+        }
+    };
+
     /* ---------- models ---------- */
     async function loadModels() {
         const list = $('#modelList'); if (!list) return;
@@ -654,23 +758,6 @@
         try { models = JSON.parse(window.Xenon.listModels()); }
         catch (_) { models = []; }
 
-        /* Merge device-imported models */
-        const imports = loadImports();
-        for (const imp of imports) {
-            if (!models.find(m => m.filename === imp.filename)) {
-                models.push({
-                    name: imp.filename.replace(/\.gguf$/i, ''),
-                    category: 'Imported · ' + new Date(imp.importedAt).toLocaleDateString(),
-                    filename: imp.filename,
-                    url: '',
-                    approxBytes: 0,   /* unknown, size read from disk */
-                    bytes: 0,
-                    ready: true,      /* it exists on disk since we imported it */
-                    active: false,
-                    imported: true
-                });
-            }
-        }
         list.innerHTML = '';
         if (!models.length) {
             list.innerHTML = '<div class="xl-empty"><div class="xl-empty-icon"><i class="fa-solid fa-cube"></i></div><div class="xl-empty-title">No models</div></div>';
@@ -691,41 +778,14 @@
                     (m.active ? '<span class="star"><i class="fa-solid fa-star"></i></span>' : '') +
                 '</div>' +
                 '<div class="meta">' +
-                    (m.imported
-                        ? '<i class="fa-solid fa-file-import"></i> Imported'
-                        : (m.ready
-                            ? '<i class="fa-solid fa-check"></i> Installed · ' + imb + ' MB'
-                            : '<i class="fa-solid fa-cloud-arrow-down"></i> Not downloaded · ' + mb + ' MB')) +
+                    (m.ready
+                        ? '<i class="fa-solid fa-check"></i> Installed · ' + imb + ' MB'
+                        : '<i class="fa-solid fa-cloud-arrow-down"></i> Not downloaded · ' + mb + ' MB') +
                 '</div>' +
                 '<div class="bar"><i></i></div>' +
                 '<div class="actions"></div>';
             const actions = el.querySelector('.actions');
-            if (m.imported) {
-                /* Imported models: only Use + Delete */
-                const use = document.createElement('button');
-                use.className = m.active ? '' : 'primary';
-                use.innerHTML = m.active
-                    ? '<i class="fa-solid fa-check"></i> Selected'
-                    : '<i class="fa-solid fa-play"></i> Use';
-                use.disabled = m.active;
-                use.onclick = async () => {
-                    window.Xenon.setActiveModel(m.filename);
-                    toast('Switched to ' + m.name);
-                    await loadModels();
-                    await reloadModel();
-                };
-                actions.appendChild(use);
-
-                const del = document.createElement('button');
-                del.innerHTML = '<i class="fa-solid fa-trash"></i> Remove';
-                del.onclick = () => {
-                    if (!confirm('Remove ' + m.name + '?')) return;
-                    window.Xenon.deleteModel(m.filename);
-                    removeImport(m.filename);
-                    setTimeout(loadModels, 150);
-                };
-                actions.appendChild(del);
-            } else if (!m.ready) {
+            if (!m.ready) {
                 const btn = document.createElement('button');
                 btn.className = 'primary';
                 btn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
@@ -751,11 +811,11 @@
                 actions.appendChild(use);
 
                 const del = document.createElement('button');
-                del.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
+                del.innerHTML = '<i class="fa-solid fa-trash"></i> ' + (m.imported ? 'Remove' : 'Delete');
                 del.onclick = () => {
-                    if (!confirm('Delete ' + m.name + '?')) return;
+                    if (!confirm((m.imported ? 'Remove ' : 'Delete ') + m.name + '?')) return;
                     window.Xenon.deleteModel(m.filename);
-                    toast('Model deleted');
+                    toast(m.imported ? 'Model removed' : 'Model deleted');
                     setTimeout(loadModels, 150);
                 };
                 actions.appendChild(del);
@@ -788,13 +848,8 @@
         const path = window.Xenon.modelPath(active.filename);
         setTimeout(() => {
             const rc = window.Xenon.loadModel(path);
-            if (rc === 0) {
-                setIsland('ready', active.name, '');
-                toast('Model ready: ' + active.name);
-            } else {
-                setIsland('error', 'Load failed', 'code ' + rc);
-                toast('Load failed: code ' + rc, 'fa-solid fa-triangle-exclamation');
-            }
+            if (rc === 0) { setIsland('ready', active.name, ''); toast('Model ready: ' + active.name); }
+            else          { setIsland('error', 'Load failed', 'code ' + rc); toast('Load failed: code ' + rc, 'fa-solid fa-triangle-exclamation'); }
             renderChat();
         }, 40);
     }
@@ -811,10 +866,11 @@
     const DEFAULTS = {
         maxTokens: 256, temperature: 0.7, topP: 0.95, topK: 40,
         repeatPenalty: 1.10, threads: 4, ctx: 2048, seed: -1,
-        theme: 'dark', streaming: true, markdown: true,
+        theme: 'dark', accent: 'blue', streaming: true, markdown: true,
         system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
     };
     function applyTheme(t) { document.body.dataset.theme = t || 'dark'; }
+    function applyAccent(a) { document.body.dataset.accent = a || 'blue'; }
 
     function loadSettings() {
         const s = JSON.parse(window.Xenon.getSettings());
@@ -824,6 +880,7 @@
             ctx: parseInt(store.getItem('xenon.ctx') || DEFAULTS.ctx, 10),
             seed: parseInt(store.getItem('xenon.seed') || DEFAULTS.seed, 10),
             theme: store.getItem('xenon.theme') || DEFAULTS.theme,
+            accent: store.getItem('xenon.accent') || DEFAULTS.accent,
             streaming: store.getItem('xenon.streaming') !== '0',
             markdown: store.getItem('xenon.md') !== '0'
         };
@@ -844,10 +901,11 @@
         setC('swMarkdown', local.markdown);
 
         applyTheme(local.theme);
-        $$('#themeSegment button').forEach(b =>
-            b.classList.toggle('active', b.dataset.theme === local.theme));
+        applyAccent(local.accent);
+        $$a('#themeSegment button').forEach(b => b.classList.toggle('active', b.dataset.theme === local.theme));
+        $$a('#accentSwatches button').forEach(b => b.classList.toggle('active', b.dataset.accent === local.accent));
 
-        bindRange('sMax',  'oMax');
+        bindRange('sMax', 'oMax');
         bindRange('sTemp','oTemp', v => (v / 100).toFixed(2));
         bindRange('sTopP','oTopP', v => (v / 100).toFixed(2));
         bindRange('sTopK','oTopK');
@@ -857,22 +915,24 @@
         bindRange('sSeed','oSeed');
     }
 
-    $$('#themeSegment button').forEach(b => b.addEventListener('click', () => {
-        $$('#themeSegment button').forEach(x => x.classList.remove('active'));
+    $$a('#themeSegment button').forEach(b => b.addEventListener('click', () => {
+        $$a('#themeSegment button').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         applyTheme(b.dataset.theme);
         store.setItem('xenon.theme', b.dataset.theme);
     }));
-
-    $$('.xl-chip').forEach(chip => chip.addEventListener('click', () => {
+    $$a('#accentSwatches button').forEach(b => b.addEventListener('click', () => {
+        $$a('#accentSwatches button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        applyAccent(b.dataset.accent);
+        store.setItem('xenon.accent', b.dataset.accent);
+    }));
+    $$a('.xl-chip').forEach(chip => chip.addEventListener('click', () => {
         const ta = document.getElementById('sSystem');
         if (ta) ta.value = chip.dataset.preset;
     }));
-
     const swStream = document.getElementById('swStream');
-    if (swStream) swStream.addEventListener('change', e =>
-        store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
-
+    if (swStream) swStream.addEventListener('change', e => store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
     const swMarkdown = document.getElementById('swMarkdown');
     if (swMarkdown) swMarkdown.addEventListener('change', e => {
         store.setItem('xenon.md', e.target.checked ? '1' : '0');
@@ -896,6 +956,90 @@
         toast('Settings saved');
     };
 
+    /* ---------- export / import ---------- */
+    function exportAll() {
+        try {
+            const data = {
+                version: 1,
+                exported: new Date().toISOString(),
+                app: 'XenonLabs',
+                settings: {
+                    maxTokens: +document.getElementById('sMax').value,
+                    temperature: +document.getElementById('sTemp').value / 100,
+                    topP: +document.getElementById('sTopP').value / 100,
+                    topK: +document.getElementById('sTopK').value,
+                    repeatPenalty: +document.getElementById('sRep').value / 100,
+                    threads: +document.getElementById('sThreads').value,
+                    ctx: +document.getElementById('sCtx').value,
+                    seed: +document.getElementById('sSeed').value,
+                    system: document.getElementById('sSystem').value,
+                    theme: store.getItem('xenon.theme') || 'dark',
+                    accent: store.getItem('xenon.accent') || 'blue',
+                    markdown: store.getItem('xenon.md') !== '0'
+                },
+                conversations: convs
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'xenonlabs-backup-' + Date.now() + '.json';
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            toast('Backup exported');
+        } catch (e) { toast('Export failed: ' + e.message, 'fa-solid fa-triangle-exclamation'); }
+    }
+
+    function importAll(file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (!data || typeof data !== 'object') throw new Error('bad JSON');
+                if (data.settings) {
+                    const s = data.settings;
+                    window.Xenon.saveSettings(
+                        +s.maxTokens || 256, +s.temperature || 0.7,
+                        +s.topP || 0.95, +s.topK || 40,
+                        s.system || DEFAULTS.system);
+                    if (s.repeatPenalty) store.setItem('xenon.repeatPenalty', s.repeatPenalty);
+                    if (s.threads)       store.setItem('xenon.threads', s.threads);
+                    if (s.ctx)           store.setItem('xenon.ctx', s.ctx);
+                    if (s.seed != null)  store.setItem('xenon.seed', s.seed);
+                    if (s.theme)         store.setItem('xenon.theme', s.theme);
+                    if (s.accent)        store.setItem('xenon.accent', s.accent);
+                    if (s.markdown != null) store.setItem('xenon.md', s.markdown ? '1' : '0');
+                }
+                if (Array.isArray(data.conversations)) {
+                    convs = data.conversations;
+                    saveConvs(convs);
+                    activeId = convs[0] ? convs[0].id : null;
+                    store.setItem(ACTIVE_KEY, activeId || '');
+                }
+                loadSettings();
+                renderHistory();
+                renderChat();
+                toast('Backup imported');
+            } catch (err) { toast('Import failed: ' + err.message, 'fa-solid fa-triangle-exclamation'); }
+        };
+        reader.readAsText(file);
+    }
+
+    const exportBtn = document.getElementById('exportData');
+    if (exportBtn) exportBtn.onclick = exportAll;
+    const importBtn = document.getElementById('importData');
+    const importFileEl = document.getElementById('importFile');
+    if (importBtn && importFileEl) {
+        importBtn.onclick = () => importFileEl.click();
+        importFileEl.addEventListener('change', () => {
+            if (importFileEl.files && importFileEl.files[0]) {
+                importAll(importFileEl.files[0]);
+                importFileEl.value = '';
+            }
+        });
+    }
+
+    /* ---------- danger zone ---------- */
     const clearBtn = document.getElementById('clearHistory');
     if (clearBtn) clearBtn.onclick = () => {
         if (!confirm('Delete all conversations? This cannot be undone.')) return;
@@ -910,56 +1054,87 @@
         window.Xenon.saveSettings(DEFAULTS.maxTokens, DEFAULTS.temperature,
             DEFAULTS.topP, DEFAULTS.topK, DEFAULTS.system);
         ['xenon.repeatPenalty','xenon.threads','xenon.ctx','xenon.seed',
-         'xenon.theme','xenon.streaming','xenon.md']
+         'xenon.theme','xenon.accent','xenon.streaming','xenon.md']
             .forEach(k => store.removeItem(k));
         loadSettings();
         toast('Settings reset');
     };
-
     const refreshBtn = document.getElementById('refreshModelsBtn');
-    if (refreshBtn) refreshBtn.onclick = () => {
-        loadModels();
-        toast('Refreshed');
+    if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
+
+    /* ---------- in-app update check ---------- */
+    const APP_VERSION  = '1.0.0';
+    const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
+    const DISMISS_KEY  = 'xenon.updateDismissedFor';
+
+    function versionNewer(remote, local) {
+        const a = String(remote).replace(/^v/,'').split('.').map(n => parseInt(n,10)||0);
+        const b = String(local).split('.').map(n => parseInt(n,10)||0);
+        for (let i = 0; i < 3; i++) {
+            const x = a[i]||0, y = b[i]||0;
+            if (x > y) return true;
+            if (x < y) return false;
+        }
+        return false;
+    }
+
+    async function checkForUpdates() {
+        if (store.getItem(DISMISS_KEY) === APP_VERSION) return;
+        let r;
+        try {
+            r = await fetch(RELEASES_URL, { headers: { 'Accept': 'application/vnd.github+json' }, cache: 'no-store' });
+        } catch (_) { return; }
+        if (!r.ok) return;
+        let j;
+        try { j = await r.json(); } catch (_) { return; }
+        const tag = (j && j.tag_name) ? j.tag_name : '';
+        const remote = tag.replace(/^v/,'');
+        if (!remote || !versionNewer(remote, APP_VERSION)) return;
+        const apk = (j.assets || []).find(a => a.name && a.name.toLowerCase().endsWith('.apk'));
+        if (!apk || !apk.browser_download_url) return;
+
+        const old = document.getElementById('xlUpdateBanner');
+        if (old) old.remove();
+        const banner = document.createElement('div');
+        banner.id = 'xlUpdateBanner';
+        banner.className = 'xl-update-banner';
+        banner.innerHTML =
+            '<i class="fa-solid fa-arrow-up-right-dots"></i>' +
+            '<div class="xl-update-text"><strong>Update available</strong>' +
+            '<span>v' + escapeHtml(remote) + ' · tap Download</span></div>' +
+            '<button type="button" class="xl-update-open"><i class="fa-solid fa-download"></i> Download</button>' +
+            '<button type="button" class="xl-update-close" aria-label="Dismiss"><i class="fa-solid fa-xmark"></i></button>';
+        banner.querySelector('.xl-update-open').onclick = () => {
+            try { window.location.href = apk.browser_download_url; } catch (_) { toast('Cannot open download'); }
+        };
+        banner.querySelector('.xl-update-close').onclick = () => {
+            store.setItem(DISMISS_KEY, APP_VERSION);
+            banner.remove();
+        };
+        document.body.appendChild(banner);
+    }
+
+    /* ---------- New chat from widget ---------- */
+    window.__xenonNewChat = function () {
+        try {
+            try { window.Xenon.stopSpeaking(); } catch (_) {}
+            if (window.__xenonTtsState) window.__xenonTtsState('idle');
+            newConversation();
+            renderChat();
+            renderHistory();
+            activateTab('chat');
+        } catch (e) { console.error('__xenonNewChat failed:', e); }
     };
 
-    /* ============================================================
-       Import GGUF from device
-       ============================================================ */
-
-    const IMPORTS_KEY = 'xenon.imports';
-
-    function loadImports() {
-        try { return JSON.parse(store.getItem(IMPORTS_KEY) || '[]'); }
-        catch (_) { return []; }
-    }
-    function saveImports(list) {
-        try { store.setItem(IMPORTS_KEY, JSON.stringify(list)); } catch (_) {}
-    }
-    function addImport(filename) {
-        const list = loadImports();
-        if (!list.find(x => x.filename === filename)) {
-            list.unshift({ filename, importedAt: Date.now() });
-            saveImports(list);
-        }
-    }
-    function removeImport(filename) {
-        const list = loadImports().filter(x => x.filename !== filename);
-        saveImports(list);
-    }
-
-    /* Called from Java when a file finishes importing */
+    /* ---------- import GGUF hooks ---------- */
     window.__xenonImportProgress = msg => {
         const box = document.getElementById('importProgress');
         const txt = document.getElementById('importProgressText');
-        if (box && txt) {
-            box.hidden = false;
-            txt.textContent = msg;
-        }
+        if (box && txt) { box.hidden = false; txt.textContent = msg; }
     };
     window.__xenonImportDone = filename => {
         const box = document.getElementById('importProgress');
         if (box) box.hidden = true;
-        addImport(filename);
         toast('Imported ' + filename);
         loadModels();
     };
@@ -969,168 +1144,14 @@
         if (msg === 'cancelled') return;
         toast('Import failed: ' + msg, 'fa-solid fa-triangle-exclamation');
     };
-
-    const importBtn = document.getElementById('importModelBtn');
-    if (importBtn) importBtn.onclick = () => {
+    const importModelBtn = document.getElementById('importModelBtn');
+    if (importModelBtn) importModelBtn.onclick = () => {
         const box = document.getElementById('importProgress');
         const txt = document.getElementById('importProgressText');
         if (box && txt) { box.hidden = false; txt.textContent = 'Waiting for file…'; }
         try { window.Xenon.importModel(); } catch (e) {
             if (box) box.hidden = true;
             toast('Cannot open file picker');
-        }
-    };
-
-    /* ============================================================
-       In-app update check (GitHub Releases)
-       ============================================================ */
-
-    const APP_VERSION   = '1.0.0';
-    const RELEASES_URL  = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
-    const DISMISS_KEY   = 'xenon.updateDismissedFor';
-
-    /* Returns true if `remote` is a strictly higher semver than `local`. */
-    function versionNewer(remote, local) {
-        const a = String(remote).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
-        const b = String(local).split('.').map(n => parseInt(n, 10) || 0);
-        for (let i = 0; i < 3; i++) {
-            const x = a[i] || 0, y = b[i] || 0;
-            if (x > y) return true;
-            if (x < y) return false;
-        }
-        return false;
-    }
-
-    function removeUpdateBanner() {
-        const el = document.getElementById('xlUpdateBanner');
-        if (el) el.remove();
-    }
-
-    function showUpdateBanner(remoteVersion, apkUrl, notesUrl) {
-        removeUpdateBanner();
-
-        const banner = document.createElement('div');
-        banner.id = 'xlUpdateBanner';
-        banner.className = 'xl-update-banner';
-        banner.innerHTML =
-            '<i class="fa-solid fa-arrow-up-right-dots"></i>' +
-            '<div class="xl-update-text">' +
-                '<strong>Update available</strong>' +
-                '<span>v' + escapeHtml(remoteVersion) + ' &middot; tap Download to install</span>' +
-            '</div>' +
-            '<button type="button" class="xl-update-open">' +
-                '<i class="fa-solid fa-download"></i> Download' +
-            '</button>' +
-            '<button type="button" class="xl-update-close" aria-label="Dismiss">' +
-                '<i class="fa-solid fa-xmark"></i>' +
-            '</button>';
-
-        banner.querySelector('.xl-update-open').onclick = () => {
-            try {
-                /* Opening a direct APK URL triggers the browser / download manager */
-                window.location.href = apkUrl;
-            } catch (e) {
-                toast('Cannot open download');
-            }
-        };
-
-        banner.querySelector('.xl-update-close').onclick = () => {
-            store.setItem(DISMISS_KEY, APP_VERSION);
-            banner.remove();
-        };
-
-        document.body.appendChild(banner);
-    }
-
-    async function checkForUpdates() {
-        /* Don't nag the user twice for the same installed version */
-        if (store.getItem(DISMISS_KEY) === APP_VERSION) return;
-
-        let r;
-        try {
-            r = await fetch(RELEASES_URL, {
-                headers: { 'Accept': 'application/vnd.github+json' },
-                cache: 'no-store',
-            });
-        } catch (_) {
-            return; /* offline or blocked — silent */
-        }
-        if (!r.ok) return;
-
-        let j;
-        try { j = await r.json(); } catch (_) { return; }
-
-        const tag = (j && j.tag_name) ? j.tag_name : '';
-        const remote = tag.replace(/^v/, '');
-        if (!remote || !versionNewer(remote, APP_VERSION)) return;
-
-        /* Find the first .apk asset in the release */
-        const apk = (j.assets || []).find(a => a.name && a.name.toLowerCase().endsWith('.apk'));
-        if (!apk || !apk.browser_download_url) return;
-
-        showUpdateBanner(remote, apk.browser_download_url, j.html_url || RELEASES_URL);
-    }
-
-    /* ============================================================
-       Text-to-speech
-       ============================================================ */
-
-    let currentSpeakingId = null;   /* DOM id of the row being spoken */
-
-    window.__xenonTtsState = state => {
-        /* Reset all speak buttons */
-        document.querySelectorAll('.xl-msg-actions .act-speak').forEach(btn => {
-            btn.classList.remove('speaking');
-            btn.innerHTML = '<i class="fa-solid fa-volume-high"></i> Speak';
-        });
-        if (state === 'speaking' && currentSpeakingId) {
-            const btn = document.querySelector('#' + currentSpeakingId + ' .act-speak');
-            if (btn) {
-                btn.classList.add('speaking');
-                btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
-            }
-        }
-        if (state === 'idle' || state === 'unavailable') {
-            currentSpeakingId = null;
-            if (state === 'unavailable') toast('Speech unavailable on this device', 'fa-solid fa-triangle-exclamation');
-        }
-    };
-
-    let nextTtsId = 1;
-    function speakRow(rowEl, textEl) {
-        const text = rowEl.dataset.raw || textEl.textContent || '';
-        if (!text.trim()) return;
-
-        /* tap again to stop */
-        if (currentSpeakingId === rowEl.id && rowEl.querySelector('.act-speak.speaking')) {
-            try { window.Xenon.stopSpeaking(); } catch (_) {}
-            window.__xenonTtsState && window.__xenonTtsState('idle');
-            return;
-        }
-
-        try { window.Xenon.stopSpeaking(); } catch (_) {}
-        if (!rowEl.id) rowEl.id = 'xl-speak-' + (nextTtsId++);
-        currentSpeakingId = rowEl.id;
-
-        try {
-            window.Xenon.speak(text);
-        } catch (e) {
-            toast('Speech not available');
-            currentSpeakingId = null;
-        }
-    }
-
-    /* Called from Java when the widget's "New chat" button launches the app */
-    window.__xenonNewChat = function () {
-        try {
-            try { window.Xenon.stopSpeaking(); } catch (_) {}
-            if (window.__xenonTtsState) window.__xenonTtsState('idle');
-            newConversation();
-            renderChat();
-            renderHistory();
-            activateTab('chat');
-        } catch (e) {
-            console.error('__xenonNewChat failed:', e);
         }
     };
 

@@ -3,17 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
 <title>XenonLabs</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<header class="topbar">
-    <div class="brand">
-        <span class="dot"></span> XenonLabs
-    </div>
-    <div id="modelTag" class="tag">no model</div>
-</header>
 
 <main id="views">
 
@@ -21,58 +15,84 @@
     <section id="view-chat" class="view active">
         <div id="messages" class="messages"></div>
 
-        <form id="composer" class="composer" autocomplete="off">
-            <textarea id="prompt" rows="1" placeholder="Ask anything…"></textarea>
-            <button id="send" type="submit" aria-label="Send">
-                <svg viewBox="0 0 24 24" width="22" height="22">
-                    <path fill="currentColor"
-                        d="M3 20.5v-17L21 12 3 20.5zm2-3.25L15.75 12 5 6.75v3.5L11 12l-6 1.75v3.5z"/>
-                </svg>
-            </button>
-        </form>
+        <div class="composer-wrap">
+            <div id="modelPill" class="model-pill" hidden></div>
+            <form id="composer" class="composer" autocomplete="off">
+                <textarea id="prompt" rows="1" placeholder="Message" aria-label="Message"></textarea>
+                <button id="send" type="submit" aria-label="Send">
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                        <path fill="currentColor"
+                            d="M4 12l1.41-1.41L11 16.17V4h2v12.17l5.58-5.58L20 12l-8 8-8-8z"
+                            transform="rotate(90 12 12)"/>
+                    </svg>
+                </button>
+            </form>
+        </div>
     </section>
 
     <!-- MODELS -->
     <section id="view-models" class="view">
-        <div id="modelList" class="model-list"></div>
+        <div class="scroll">
+            <div class="section-title">Models</div>
+            <div id="modelList" class="model-list"></div>
+        </div>
     </section>
 
     <!-- SETTINGS -->
     <section id="view-settings" class="view">
-        <div class="card">
-            <label>Max tokens <output id="oMax">256</output></label>
-            <input type="range" id="sMax" min="32" max="1024" step="32" value="256">
+        <div class="scroll">
+            <div class="section-title">Generation</div>
+            <div class="card">
+                <div class="row">
+                    <span>Max tokens</span>
+                    <output id="oMax">256</output>
+                </div>
+                <input type="range" id="sMax" min="32" max="1024" step="32" value="256">
 
-            <label>Temperature <output id="oTemp">0.70</output></label>
-            <input type="range" id="sTemp" min="0" max="150" step="1" value="70">
+                <div class="row">
+                    <span>Temperature</span>
+                    <output id="oTemp">0.70</output>
+                </div>
+                <input type="range" id="sTemp" min="0" max="150" step="1" value="70">
 
-            <label>Top-p <output id="oTopP">0.95</output></label>
-            <input type="range" id="sTopP" min="1" max="100" step="1" value="95">
+                <div class="row">
+                    <span>Top-p</span>
+                    <output id="oTopP">0.95</output>
+                </div>
+                <input type="range" id="sTopP" min="1" max="100" step="1" value="95">
 
-            <label>Top-k <output id="oTopK">40</output></label>
-            <input type="range" id="sTopK" min="0" max="100" step="1" value="40">
+                <div class="row">
+                    <span>Top-k</span>
+                    <output id="oTopK">40</output>
+                </div>
+                <input type="range" id="sTopK" min="0" max="100" step="1" value="40">
+            </div>
 
-            <label>System prompt</label>
-            <textarea id="sSystem" rows="3">You are a helpful assistant.</textarea>
+            <div class="section-title">System prompt</div>
+            <div class="card">
+                <textarea id="sSystem" rows="4">You are a helpful assistant.</textarea>
+            </div>
 
-            <button id="save" class="primary">Save</button>
+            <button id="save" class="primary-btn">Save</button>
             <div id="savedMsg" class="hint"></div>
+
+            <div class="footer-space"></div>
         </div>
     </section>
 
 </main>
 
 <nav class="tabbar">
-    <button data-tab="chat" class="tab active">
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v12H7l-3 4V4z"/></svg>
+    <button data-tab="chat" class="tab active" aria-label="Chat">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M4 4h16a1 1 0 011 1v11a1 1 0 01-1 1H8l-4 4V5a1 1 0 011-1z"/></svg>
         <span>Chat</span>
     </button>
-    <button data-tab="models" class="tab">
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/></svg>
+    <button data-tab="models" class="tab" aria-label="Models">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 2l9 5v10l-9 5-9-5V7l9-5zm0 2.3L5 8v8l7 4 7-4V8l-7-3.7z"/></svg>
         <span>Models</span>
     </button>
-    <button data-tab="settings" class="tab">
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 4l-2-1 2-1-1-2-2 1-1-2-2 1-1-2h-2l-1 2-2-1-1 2-2-1-1 2 2 1-2 1 1 2 2-1 1 2 2-1 1 2h2l1-2 2 1 1-2 2 1 1-2z"/></svg>
+    <button data-tab="settings" class="tab" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm9.4 4.94l-1.7-.98a7.7 7.7 0 000-1.92l1.7-.98a.6.6 0 00.23-.83l-1.65-2.86a.6.6 0 00-.78-.24l-1.7.98a7.7 7.7 0 00-1.66-.96V4.6a.6.6 0 00-.6-.6h-3.3a.6.6 0 00-.6.6v1.55c-.6.24-1.16.56-1.66.96l-1.7-.98a.6.6 0 00-.78.24L4.36 9.23a.6.6 0 00.23.83l1.7.98a7.7 7.7 0 000 1.92l-1.7.98a.6.6 0 00-.23.83l1.65 2.86c.16.27.5.37.78.24l1.7-.98c.5.4 1.06.72 1.66.96v1.55c0 .33.27.6.6.6h3.3a.6.6 0 00.6-.6v-1.55c.6-.24 1.16-.56 1.66-.96l1.7.98c.28.13.62.03.78-.24l1.65-2.86a.6.6 0 00-.23-.83z"/></svg>
         <span>Settings</span>
     </button>
 </nav>

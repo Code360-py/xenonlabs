@@ -6,7 +6,7 @@
 
     <application
         android:label="XenonLabs"
-        android:theme="@style/Theme.AppCompat.DayNight"
+        android:theme="@style/Theme.XenonLabs"
         android:allowBackup="true">
 
         <activity

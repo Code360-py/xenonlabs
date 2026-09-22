@@ -76,9 +76,6 @@ jobs:
           cp llama.cpp/build-android/bin/libggml-base.so $DEST/
           cp llama.cpp/build-android/bin/libggml-cpu.so  $DEST/
 
-          # libc++_shared.so required by libllama.so at runtime
-          find $ANDROID_NDK_HOME -name 'libc++_shared.so' -path '*aarch64*' \
-               -exec cp {} $DEST/ \; || true
 
           ls -lh $DEST/
 

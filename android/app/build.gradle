@@ -47,6 +47,16 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
+            // Preserve prebuilt llama.cpp libraries. Stripping them
+            // can silently remove the .so files from the APK.
+            keepDebugSymbols += [
+                '**/libllama.so',
+                '**/libggml.so',
+                '**/libggml-base.so',
+                '**/libggml-cpu.so',
+                '**/libc++_shared.so',
+                '**/libxenonlabs_jni.so'
+            ]
         }
     }
 

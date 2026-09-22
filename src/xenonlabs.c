@@ -244,7 +244,7 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
 
     const struct llama_vocab *vocab = c->vocab;
 
-    if (reset_context(c) != 0) return -5;
+    if (fresh_context(c) != 0) return -5;
 
     /* --- tokenize prompt --- */
     int n_prompt = -llama_tokenize(vocab, prompt, (int)strlen(prompt),

@@ -1,0 +1,2 @@
+rootProject.name = "XenonLabs"
+include ':app'

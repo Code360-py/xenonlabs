@@ -4,3 +4,15 @@ build/
 *.gguf
 models/*
 !models/.gitkeep
+
+# --- Android ---
+xenonlabs-android/.gradle/
+xenonlabs-android/build/
+xenonlabs-android/app/build/
+xenonlabs-android/local.properties
+xenonlabs-android/app/src/main/jniLibs/**/*.so
+xenonlabs-android/app/src/main/jni/llama_include/llama.h
+xenonlabs-android/app/src/main/jni/llama_include/ggml.h
+xenonlabs-android/gradlew
+xenonlabs-android/gradlew.bat
+xenonlabs-android/gradle/

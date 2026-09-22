@@ -1,0 +1,91 @@
+name: android-apk
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'xenonlabs-android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'xenonlabs-android/**'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache llama.cpp
+        id: cache-llama
+        uses: actions/cache@v4
+        with:
+          path: llama.cpp
+          key: llama-cpp-android-arm64-v2
+
+      - name: Clone llama.cpp
+        run: |
+          if [ ! -d llama.cpp ]; then
+            git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          fi
+
+      - name: Build llama.cpp for arm64-v8a
+        run: |
+          cd llama.cpp
+          cmake -S . -B build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_CURL=OFF
+          cmake --build build-android -j
+
+      - name: Copy native libs
+        run: |
+          mkdir -p xenonlabs-android/app/src/main/jniLibs/arm64-v8a
+          find llama.cpp/build-android \
+            \( -name 'libllama*.so' -o -name 'libggml*.so' \) \
+            -exec cp {} xenonlabs-android/app/src/main/jniLibs/arm64-v8a/ \;
+          ls -lh xenonlabs-android/app/src/main/jniLibs/arm64-v8a/
+
+      - name: Copy llama headers
+        run: |
+          mkdir -p xenonlabs-android/app/src/main/jni/llama_include
+          cp llama.cpp/include/llama.h \
+             xenonlabs-android/app/src/main/jni/llama_include/
+          find llama.cpp -name 'ggml*.h' \
+             -exec cp {} xenonlabs-android/app/src/main/jni/llama_include/ \;
+          ls -lh xenonlabs-android/app/src/main/jni/llama_include/
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Generate Gradle wrapper
+        working-directory: xenonlabs-android
+        run: gradle wrapper --gradle-version 8.7
+
+      - name: Build debug APK
+        working-directory: xenonlabs-android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xenonlabs-apk
+          path: xenonlabs-android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30

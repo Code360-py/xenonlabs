@@ -1,4 +1,4 @@
-/* XenonLabs UI — Batch 1: Markdown, copy, professional prompts */
+/* XenonLabs UI — ChatGPT-style chat with history, markdown, copy */
 (function () {
     'use strict';
 
@@ -32,6 +32,7 @@
         if (!hasMarked) { el.textContent = text; return; }
         try { el.innerHTML = window.marked.parse(text); }
         catch (_) { el.textContent = text; return; }
+
         el.querySelectorAll('pre code').forEach(block => {
             if (!block.dataset.hl) {
                 try { if (hasHljs) window.hljs.highlightElement(block); } catch (_) {}
@@ -90,7 +91,6 @@
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
     }
-    window.__xenonToast = toast;
 
     function showError(msg) {
         const box = document.createElement('div');
@@ -100,7 +100,36 @@
     }
     window.addEventListener('error', e => showError('JS: ' + e.message));
 
-    /* conversations */
+    /* ---------- thinking indicator ---------- */
+    function setHeaderThinking(on) {
+        const hm = document.getElementById('headerModel');
+        if (!hm) return;
+        const existing = hm.querySelector('.thinking-dots');
+        if (on && !existing) {
+            const dots = document.createElement('span');
+            dots.className = 'thinking-dots';
+            dots.innerHTML = '<i></i><i></i><i></i>';
+            hm.appendChild(dots);
+        } else if (!on && existing) {
+            existing.remove();
+        }
+    }
+
+    function showThinkingInBubble(textEl) {
+        if (!textEl) return;
+        textEl.innerHTML = '';
+        const t = document.createElement('div');
+        t.className = 'xl-thinking';
+        t.innerHTML = '<span></span><span></span><span></span>';
+        textEl.appendChild(t);
+    }
+
+    function clearThinkingInBubble(textEl) {
+        if (!textEl) return;
+        const t = textEl.querySelector('.xl-thinking');
+        if (t) t.remove();
+    }
+
     const CONV_KEY = 'xenon.convs', ACTIVE_KEY = 'xenon.activeConv';
     function loadConvs() { try { return JSON.parse(store.getItem(CONV_KEY) || '[]'); } catch (_) { return []; } }
     function saveConvs(l) { try { store.setItem(CONV_KEY, JSON.stringify(l)); } catch (_) {} }
@@ -135,8 +164,8 @@
     function deleteConversation(id) {
         convs = convs.filter(c => c.id !== id);
         if (activeId === id) activeId = convs[0] ? convs[0].id : null;
-        store.setItem(ACTIVE_KEY, activeId || ''); saveConvs(convs);
-        renderHistory();
+        store.setItem(ACTIVE_KEY, activeId || '');
+        saveConvs(convs); renderHistory();
     }
     function relativeTime(ts) {
         const s = (Date.now() - ts) / 1000;
@@ -238,43 +267,67 @@
     const sendBtn  = $('#send');
     let generating = false;
 
-    function makeAssistantBubble(text) {
-        const el = document.createElement('div');
-        el.className = 'xl-bubble assistant';
-        el.dataset.raw = text || '';
-
-        const actions = document.createElement('div');
-        actions.className = 'bubble-actions';
-        const copy = document.createElement('button');
-        copy.className = 'bubble-action-btn';
-        copy.innerHTML = '<i class="fa-regular fa-copy"></i>';
-        copy.title = 'Copy';
-        copy.onclick = (e) => {
-            e.stopPropagation();
-            copyText(el.dataset.raw || el.textContent);
-            copy.classList.add('copied');
-            copy.innerHTML = '<i class="fa-solid fa-check"></i>';
-            toast('Reply copied');
-            setTimeout(() => {
-                copy.classList.remove('copied');
-                copy.innerHTML = '<i class="fa-regular fa-copy"></i>';
-            }, 1200);
-        };
-        actions.appendChild(copy);
-        el.appendChild(actions);
-
-        if (text) {
-            if (mdEnabled()) renderMarkdownInto(el, text);
-            else el.appendChild(document.createTextNode(text));
-        }
-        return el;
+    function makeUserRow(text) {
+        const row = document.createElement('div');
+        row.className = 'xl-msg user';
+        row.innerHTML =
+            '<div class="xl-msg-role">' +
+                '<span class="role-icon user"><i class="fa-solid fa-user"></i></span>' +
+                '<span>You</span>' +
+            '</div>' +
+            '<div class="xl-msg-body">' +
+                '<div class="xl-msg-text"></div>' +
+            '</div>';
+        row.querySelector('.xl-msg-text').textContent = text;
+        return row;
     }
 
-    function makeUserBubble(text) {
-        const el = document.createElement('div');
-        el.className = 'xl-bubble user';
-        el.textContent = text;
-        return el;
+    function makeAssistantRow(text) {
+        const row = document.createElement('div');
+        row.className = 'xl-msg assistant';
+        row.dataset.raw = text || '';
+        row.innerHTML =
+            '<div class="xl-msg-role">' +
+                '<span class="role-icon assistant"><i class="fa-solid fa-bolt"></i></span>' +
+                '<span>Xenon</span>' +
+            '</div>' +
+            '<div class="xl-msg-body">' +
+                '<div class="xl-msg-text"></div>' +
+                '<div class="xl-msg-actions">' +
+                    '<button class="act-copy"><i class="fa-regular fa-copy"></i> Copy</button>' +
+                '</div>' +
+            '</div>';
+
+        const textEl = row.querySelector('.xl-msg-text');
+        if (text) {
+            if (mdEnabled()) renderMarkdownInto(textEl, text);
+            else textEl.textContent = text;
+        }
+
+        row.querySelector('.act-copy').onclick = (e) => {
+            e.stopPropagation();
+            copyText(row.dataset.raw || textEl.textContent);
+            const btn = e.currentTarget;
+            btn.classList.add('copied');
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied';
+            toast('Reply copied');
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy';
+            }, 1200);
+        };
+
+        let lastTap = 0;
+        textEl.addEventListener('touchend', () => {
+            const now = Date.now();
+            if (now - lastTap < 320) {
+                copyText(row.dataset.raw || textEl.textContent);
+                toast('Reply copied');
+            }
+            lastTap = now;
+        });
+
+        return row;
     }
 
     function showEmptyState(title, sub, icon) {
@@ -296,16 +349,15 @@
             const models = JSON.parse(window.Xenon.listModels());
             const active = models.find(m => m.active && m.ready);
             showEmptyState(
-                active ? 'Ready' : 'No model loaded',
-                active ? 'Ask anything' : 'Open the Models tab to download one',
+                active ? 'Ready when you are' : 'No model loaded',
+                active ? 'Ask Xenon anything — it runs entirely on your device.' : 'Open the Models tab to download one',
                 active ? 'fa-solid fa-bolt' : 'fa-solid fa-comment-dots'
             );
             return;
         }
         messages.innerHTML = '';
         for (const m of c.messages) {
-            if (m.role === 'user') messages.appendChild(makeUserBubble(m.text));
-            else messages.appendChild(makeAssistantBubble(m.text));
+            messages.appendChild(m.role === 'user' ? makeUserRow(m.text) : makeAssistantRow(m.text));
         }
         scrollBottom();
     }
@@ -328,7 +380,7 @@
         promptEl.addEventListener('input', () => {
             if (sendBtn) sendBtn.disabled = !promptEl.value.trim() || generating;
             promptEl.style.height = 'auto';
-            promptEl.style.height = Math.min(promptEl.scrollHeight, 130) + 'px';
+            promptEl.style.height = Math.min(promptEl.scrollHeight, 110) + 'px';
         });
         promptEl.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -344,19 +396,23 @@
         if (sendBtn) sendBtn.disabled = true;
 
         const empt = messages.querySelector('.xl-empty'); if (empt) empt.remove();
-        messages.appendChild(makeUserBubble(text));
+        messages.appendChild(makeUserRow(text));
         scrollBottom();
 
         appendMessage('user', text);
         persistActive();
 
-        const asstEl = document.createElement('div');
-        asstEl.className = 'xl-bubble assistant typing';
-        messages.appendChild(asstEl);
+        const asstRow = makeAssistantRow('');
+        asstRow.classList.add('typing');
+        asstRow.querySelector('.xl-msg-actions').style.display = 'none';
+        const asstTextEl = asstRow.querySelector('.xl-msg-text');
+        messages.appendChild(asstRow);
         scrollBottom();
 
         generating = true;
         setIsland('generating', 'Thinking…', '0 tok');
+        setHeaderThinking(true);
+        showThinkingInBubble(asstTextEl);
 
         const s = JSON.parse(window.Xenon.getSettings());
         const wrapped =
@@ -370,29 +426,32 @@
 
         streams.set(id, {
             onToken: piece => {
+                if (tokens === 0) clearThinkingInBubble(asstTextEl);
                 acc += piece; tokens++;
-                asstEl.dataset.raw = acc;
+                asstRow.dataset.raw = acc;
                 if (mdEnabled()) {
-                    /* throttle: render at most once per frame */
-                    if (!asstEl._pending) {
-                        asstEl._pending = true;
+                    if (!asstRow._pending) {
+                        asstRow._pending = true;
                         requestAnimationFrame(() => {
-                            asstEl._pending = false;
-                            renderMarkdownInto(asstEl, acc);
+                            asstRow._pending = false;
+                            renderMarkdownInto(asstTextEl, acc);
                         });
                     }
                 } else {
-                    asstEl.textContent = acc;
+                    asstTextEl.textContent = acc;
                 }
                 scrollBottom();
                 setIsland('generating', 'Generating…', tokens + ' tok');
             },
             onDone: () => {
-                asstEl.classList.remove('typing');
-                if (!acc) asstEl.textContent = '[no output]';
+                clearThinkingInBubble(asstTextEl);
+                setHeaderThinking(false);
+                asstRow.classList.remove('typing');
+                asstRow.querySelector('.xl-msg-actions').style.display = '';
+                if (!acc) asstTextEl.textContent = '[no output]';
                 else {
-                    asstEl.dataset.raw = acc;
-                    if (mdEnabled()) renderMarkdownInto(asstEl, acc);
+                    asstRow.dataset.raw = acc;
+                    if (mdEnabled()) renderMarkdownInto(asstTextEl, acc);
                 }
                 appendMessage('assistant', acc || '[no output]');
                 persistActive();
@@ -401,8 +460,11 @@
                 setIsland('ready', '', '');
             },
             onError: msg => {
-                asstEl.classList.remove('typing');
-                asstEl.textContent = '[error: ' + msg + ']';
+                clearThinkingInBubble(asstTextEl);
+                setHeaderThinking(false);
+                asstRow.classList.remove('typing');
+                asstRow.querySelector('.xl-msg-actions').style.display = '';
+                asstTextEl.textContent = '[error: ' + msg + ']';
                 appendMessage('assistant', '[error: ' + msg + ']');
                 persistActive();
                 generating = false;
@@ -533,9 +595,8 @@
     const DEFAULTS = {
         maxTokens: 256, temperature: 0.7, topP: 0.95, topK: 40,
         repeatPenalty: 1.10, threads: 4, ctx: 2048, seed: -1,
-        theme: 'dark', autoScroll: true, streaming: true,
-        markdown: true,
-        system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.',
+        theme: 'dark', streaming: true, markdown: true,
+        system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
     };
     function applyTheme(t) { document.body.dataset.theme = t || 'dark'; }
 
@@ -547,9 +608,8 @@
             ctx: parseInt(store.getItem('xenon.ctx') || DEFAULTS.ctx, 10),
             seed: parseInt(store.getItem('xenon.seed') || DEFAULTS.seed, 10),
             theme: store.getItem('xenon.theme') || DEFAULTS.theme,
-            autoScroll: store.getItem('xenon.autoScroll') !== '0',
             streaming: store.getItem('xenon.streaming') !== '0',
-            markdown: store.getItem('xenon.md') !== '0',
+            markdown: store.getItem('xenon.md') !== '0'
         };
         if ($('#sMax'))    $('#sMax').value    = s.maxTokens;
         if ($('#sTemp'))   $('#sTemp').value   = Math.round(s.temperature * 100);
@@ -560,9 +620,8 @@
         if ($('#sCtx'))    $('#sCtx').value    = local.ctx;
         if ($('#sSeed'))   $('#sSeed').value   = local.seed;
         if ($('#sSystem')) $('#sSystem').value = s.system;
-        if ($('#swAutoScroll')) $('#swAutoScroll').checked = local.autoScroll;
-        if ($('#swStream'))     $('#swStream').checked     = local.streaming;
-        if ($('#swMarkdown'))   $('#swMarkdown').checked   = local.markdown;
+        if ($('#swStream'))   $('#swStream').checked   = local.streaming;
+        if ($('#swMarkdown')) $('#swMarkdown').checked = local.markdown;
         applyTheme(local.theme);
         $$('#themeSegment button').forEach(b =>
             b.classList.toggle('active', b.dataset.theme === local.theme));
@@ -585,9 +644,6 @@
     $$('.xl-chip').forEach(chip => chip.addEventListener('click', () => {
         const ta = $('#sSystem'); if (ta) ta.value = chip.dataset.preset;
     }));
-    const swAutoScroll = $('#swAutoScroll');
-    if (swAutoScroll) swAutoScroll.addEventListener('change', e =>
-        store.setItem('xenon.autoScroll', e.target.checked ? '1' : '0'));
     const swStream = $('#swStream');
     if (swStream) swStream.addEventListener('change', e =>
         store.setItem('xenon.streaming', e.target.checked ? '1' : '0'));
@@ -625,7 +681,7 @@
         window.Xenon.saveSettings(DEFAULTS.maxTokens, DEFAULTS.temperature,
             DEFAULTS.topP, DEFAULTS.topK, DEFAULTS.system);
         ['xenon.repeatPenalty','xenon.threads','xenon.ctx','xenon.seed',
-         'xenon.theme','xenon.autoScroll','xenon.streaming','xenon.md']
+         'xenon.theme','xenon.streaming','xenon.md']
             .forEach(k => store.removeItem(k));
         loadSettings();
     };

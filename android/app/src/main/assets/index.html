@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#0e1116">
 <title>XenonLabs</title>
 <link rel="stylesheet" href="vendor/bootstrap.min.css">
 <link rel="stylesheet" href="vendor/icons-fonts.css">
@@ -24,6 +24,8 @@
 </div>
 
 <main class="xl-main">
+
+    <!-- CHAT -->
     <section id="view-chat" class="xl-view active">
         <header class="xl-chat-header">
             <button type="button" id="sidebarBtn" class="xl-header-btn" aria-label="Menu">
@@ -33,20 +35,23 @@
                 <span class="dot"></span><span>No model</span>
             </div>
             <button type="button" id="newChatBtn" class="xl-header-btn" aria-label="New chat">
-                <i class="fa-solid fa-pen-to-square"></i>
+                <i class="fa-solid fa-plus"></i>
             </button>
         </header>
+
         <div id="messages" class="xl-messages"></div>
+
         <div class="xl-composer">
             <form id="composer" autocomplete="off">
                 <textarea id="prompt" rows="1" placeholder="Message Xenon" aria-label="Message"></textarea>
-                <button id="send" type="submit" class="xl-icon-btn xl-send" aria-label="Send" disabled>
+                <button id="send" type="submit" class="xl-send-btn" aria-label="Send" disabled>
                     <i class="fa-solid fa-arrow-up"></i>
                 </button>
             </form>
         </div>
     </section>
 
+    <!-- MODELS -->
     <section id="view-models" class="xl-view">
         <header class="xl-chat-header">
             <div class="xl-header-spacer"></div>
@@ -61,6 +66,7 @@
         </div>
     </section>
 
+    <!-- SETTINGS -->
     <section id="view-settings" class="xl-view">
         <header class="xl-chat-header">
             <div class="xl-header-spacer"></div>
@@ -103,19 +109,14 @@
             <div class="xl-card">
                 <div class="xl-row"><span><i class="fa-solid fa-circle-half-stroke xl-row-icon"></i>Theme</span></div>
                 <div class="xl-segment" id="themeSegment">
-                    <button data-theme="dark" class="active">Dark</button>
-                    <button data-theme="darker">Darker</button>
-                    <button data-theme="blue">Midnight</button>
+                    <button data-theme="dark" class="active">Slate</button>
+                    <button data-theme="darker">Ink</button>
+                    <button data-theme="blue">Mist</button>
                 </div>
 
                 <div class="xl-row" style="margin-top:14px;">
                     <span><i class="fa-solid fa-code xl-row-icon"></i>Render Markdown</span>
                     <label class="xl-switch"><input type="checkbox" id="swMarkdown" checked><i></i></label>
-                </div>
-
-                <div class="xl-row">
-                    <span><i class="fa-solid fa-arrow-down xl-row-icon"></i>Auto-scroll</span>
-                    <label class="xl-switch"><input type="checkbox" id="swAutoScroll" checked><i></i></label>
                 </div>
 
                 <div class="xl-row">
@@ -149,9 +150,11 @@
                 <button id="clearHistory" class="xl-danger"><i class="fa-solid fa-trash"></i> Clear all conversations</button>
                 <button id="resetSettings" class="xl-danger" style="margin-top:8px;"><i class="fa-solid fa-rotate-left"></i> Reset to defaults</button>
             </div>
+
             <div class="xl-gap"></div>
         </div>
     </section>
+
 </main>
 
 <nav class="xl-tabbar">

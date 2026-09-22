@@ -1240,3 +1240,20 @@ body[data-accent="graphite"] { --accent: #6b7280; --accent-2: #4b5563; }
     -webkit-user-select: none !important;
     user-select: none !important;
 }
+
+/* ============================================================
+   Stop button (during generation)
+   ============================================================ */
+
+.xl-send-btn.stopping {
+    background: var(--red, #ef4444);
+    color: #fff;
+    animation: stopPulse 1.6s ease-in-out infinite;
+}
+@keyframes stopPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
+    50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+.xl-send-btn.stopping:active {
+    transform: scale(.94);
+}

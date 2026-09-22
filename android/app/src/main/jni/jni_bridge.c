@@ -79,3 +79,9 @@ Java_com_xenonlabs_app_MainActivity_nativeGenerateStream(JNIEnv *env, jobject th
     (*env)->ReleaseStringUTFChars(env, jprompt, prompt);
     return st == XENON_OK ? 0 : -4;
 }
+
+JNIEXPORT void JNICALL
+Java_com_xenonlabs_app_MainActivity_nativeCancelGeneration(JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    if (g_ctx) xenon_cancel(g_ctx);
+}

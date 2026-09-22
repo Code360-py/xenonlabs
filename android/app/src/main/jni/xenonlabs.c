@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 
 #include <llama.h>
 #include <ggml.h>
@@ -25,6 +26,7 @@ struct xenon_context {
     struct llama_context     *ctx;
     const struct llama_vocab *vocab;
     int                       n_threads;
+    atomic_int                cancel_requested;
 };
 
 /* ------------------------------------------------------------------ */
@@ -213,6 +215,7 @@ static int reset_context(xenon_context_t *c) {
 
     if (c->ctx) llama_free(c->ctx);
     c->ctx = fresh;
+    atomic_store(&c->cancel_requested, 0);
     return 0;
 }
 
@@ -277,6 +280,7 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
     llama_token bos = llama_vocab_bos(vocab);
 
     while (n_gen < p->max_tokens) {
+        if (atomic_load(&c->cancel_requested)) break;
         llama_token id = llama_sampler_sample(smpl, c->ctx, -1);
 
         if (llama_vocab_is_eog(vocab, id)) break;
@@ -340,6 +344,10 @@ xenon_status_t xenon_generate_stream(xenon_context_t *ctx,
 /* Utility                                                             */
 /* ------------------------------------------------------------------ */
 void xenon_free_string(char *s) { free(s); }
+
+void xenon_cancel(xenon_context_t *ctx) {
+    if (ctx) atomic_store(&ctx->cancel_requested, 1);
+}
 
 const char *xenon_status_str(xenon_status_t s) {
     switch (s) {

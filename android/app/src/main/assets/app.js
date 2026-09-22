@@ -603,6 +603,21 @@
         });
     }
 
+    function setSendButtonMode(mode) {
+        if (!sendBtn) return;
+        if (mode === 'stop') {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fa-solid fa-square"></i>';
+            sendBtn.classList.add('stopping');
+            sendBtn.dataset.mode = 'stop';
+        } else {
+            sendBtn.innerHTML = '<i class="fa-solid fa-arrow-up"></i>';
+            sendBtn.classList.remove('stopping');
+            sendBtn.dataset.mode = 'send';
+            sendBtn.disabled = !promptEl.value.trim();
+        }
+    }
+
     function streamAssistantReply(userText) {
         if (!messages) return;
         const asstRow = makeAssistantRow('', { regenerable: true });
@@ -613,7 +628,7 @@
         scrollBottom();
 
         generating = true;
-        if (sendBtn) sendBtn.disabled = true;
+        setSendButtonMode('stop');
         setIsland('generating', 'Thinking…', '0 tok');
         setHeaderThinking(true);
         showThinkingInBubble(asstTextEl);
@@ -673,7 +688,7 @@
                 appendMessage('assistant', acc || '[no output]');
                 persistActive();
                 generating = false;
-                if (sendBtn) sendBtn.disabled = !promptEl.value.trim();
+                setSendButtonMode('send');
                 setIsland('ready', '', '');
                 renderChat();
             },
@@ -687,7 +702,7 @@
                 appendMessage('assistant', '[error: ' + msg + ']');
                 persistActive();
                 generating = false;
-                if (sendBtn) sendBtn.disabled = !promptEl.value.trim();
+                setSendButtonMode('send');
                 setIsland('error', 'Error', String(msg).slice(0, 24));
                 renderChat();
             }
@@ -735,6 +750,12 @@
     const composer = $('#composer');
     if (composer) composer.addEventListener('submit', e => {
         e.preventDefault();
+        /* If a reply is generating, the button is a Stop button */
+        if (generating) {
+            try { window.Xenon.cancelGeneration(); } catch (_) {}
+            toast('Stopping…');
+            return;
+        }
         const text = promptEl ? promptEl.value.trim() : '';
         if (!text) return;
         sendPrompt(text);

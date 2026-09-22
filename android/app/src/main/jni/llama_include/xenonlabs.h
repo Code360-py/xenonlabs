@@ -84,6 +84,10 @@ XENONLABS_API xenon_status_t xenon_generate_stream(xenon_context_t *ctx,
                                                    xenon_token_cb cb,
                                                    void *user_data);
 
+/* Cooperative cancellation — call from another thread to abort
+ * an in-flight xenon_generate or xenon_generate_stream. */
+XENONLABS_API void xenon_cancel(xenon_context_t *ctx);
+
 /* Utility */
 XENONLABS_API void         xenon_free_string(char *s);
 XENONLABS_API const char  *xenon_status_str(xenon_status_t s);

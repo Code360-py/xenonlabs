@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-android-arm64-v5
+          key: llama-cpp-android-arm64-v6
 
       - name: Clone llama.cpp
         run: |
@@ -44,7 +44,7 @@ jobs:
             git clone --depth 1 https://github.com/ggml-org/llama.cpp
           fi
 
-      - name: Configure llama.cpp (arm64-v8a, shared lib only)
+      - name: Configure llama.cpp
         run: |
           cd llama.cpp
           cmake -S . -B build-android -G Ninja \
@@ -67,25 +67,24 @@ jobs:
 
       - name: Copy native libs
         run: |
-          mkdir -p xenonlabs-android/app/src/main/jniLibs/arm64-v8a
-          cp llama.cpp/build-android/bin/libllama.so \
-             xenonlabs-android/app/src/main/jniLibs/arm64-v8a/
-          cp llama.cpp/build-android/bin/libggml.so \
-             xenonlabs-android/app/src/main/jniLibs/arm64-v8a/
-          cp llama.cpp/build-android/bin/libggml-base.so \
-             xenonlabs-android/app/src/main/jniLibs/arm64-v8a/
-          cp llama.cpp/build-android/bin/libggml-cpu.so \
-             xenonlabs-android/app/src/main/jniLibs/arm64-v8a/
-          ls -lh xenonlabs-android/app/src/main/jniLibs/arm64-v8a/
+          DEST=xenonlabs-android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p $DEST
+          cp llama.cpp/build-android/bin/libllama.so     $DEST/
+          cp llama.cpp/build-android/bin/libggml.so      $DEST/
+          cp llama.cpp/build-android/bin/libggml-base.so $DEST/
+          cp llama.cpp/build-android/bin/libggml-cpu.so  $DEST/
+          # libc++_shared.so from the NDK (required by libllama.so at runtime)
+          find $ANDROID_NDK_HOME -name 'libc++_shared.so' -path '*aarch64*' \
+               -exec cp {} $DEST/ \; || true
+          ls -lh $DEST/
 
       - name: Copy llama headers
         run: |
-          mkdir -p xenonlabs-android/app/src/main/jni/llama_include
-          cp llama.cpp/include/llama.h \
-             xenonlabs-android/app/src/main/jni/llama_include/
-          find llama.cpp/ggml -name 'ggml*.h' \
-             -exec cp {} xenonlabs-android/app/src/main/jni/llama_include/ \;
-          ls -lh xenonlabs-android/app/src/main/jni/llama_include/
+          DEST=xenonlabs-android/app/src/main/jni/llama_include
+          mkdir -p $DEST
+          cp llama.cpp/include/llama.h $DEST/
+          find llama.cpp/ggml -name 'ggml*.h' -exec cp {} $DEST/ \;
+          ls -lh $DEST/ | head
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3

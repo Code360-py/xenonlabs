@@ -44,10 +44,14 @@ static int env_truthy(const char *name) {
     return !(v[0] == '0' && v[1] == '\0');
 }
 
+#ifdef XENONLABS_NO_LOG_SET
+/* Prebuilt Android libllama.so may not export ggml_log_set. */
+#else
 static void silent_log_cb(enum ggml_log_level level,
                           const char *text, void *user) {
     (void)level; (void)text; (void)user;
 }
+#endif
 
 /* Dynamic string buffer */
 typedef struct { char *buf; size_t len; size_t cap; } xbuf_t;
@@ -104,10 +108,12 @@ xenon_gen_params_t xenon_default_gen_params(void) {
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 xenon_status_t xenon_init(void) {
+#ifndef XENONLABS_NO_LOG_SET
     if (!env_truthy("XENONLABS_VERBOSE")) {
         ggml_log_set(silent_log_cb, NULL);
         llama_log_set(silent_log_cb, NULL);
     }
+#endif
     llama_backend_init();
     return XENON_OK;
 }

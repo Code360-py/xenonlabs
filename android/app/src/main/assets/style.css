@@ -849,3 +849,54 @@ body.xl-app {
     transform: translateX(-50%) translateY(0);
 }
 .xl-toast i { color: var(--green); }
+
+/* Tap fallback: expose copy button when bubble is touched */
+.xl-bubble.assistant.tap-active .bubble-actions { opacity: 1; pointer-events: auto; }
+.xl-bubble.assistant.tap-active pre .code-copy  { opacity: 1; }
+
+/* ============================================================
+   FORCE-visible copy buttons (append-only override)
+   ============================================================ */
+
+/* Small copy icon inside each code block */
+.xl-bubble.assistant pre .code-copy {
+    opacity: 1 !important;
+    width: 26px !important;
+    height: 26px !important;
+    background: rgba(255,255,255,.14) !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    z-index: 2 !important;
+    display: grid !important;
+    place-items: center !important;
+}
+.xl-bubble.assistant pre .code-copy:active {
+    background: rgba(255,255,255,.28) !important;
+}
+.xl-bubble.assistant pre .code-copy.copied {
+    color: var(--green) !important;
+}
+
+/* Copy button that floats above the assistant bubble */
+.xl-bubble.assistant .bubble-actions {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2 !important;
+}
+
+/* Make the bubble-actions button slightly larger and more visible */
+.xl-bubble.assistant .bubble-action-btn {
+    width: 30px !important;
+    height: 30px !important;
+    background: rgba(50,50,54,.9) !important;
+    color: #fff !important;
+    border: .5px solid rgba(255,255,255,.18) !important;
+    font-size: 13px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5) !important;
+}
+.xl-bubble.assistant .bubble-action-btn:active {
+    background: rgba(70,70,74,.95) !important;
+}
+.xl-bubble.assistant .bubble-action-btn.copied {
+    color: var(--green) !important;
+}

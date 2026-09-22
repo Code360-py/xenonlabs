@@ -243,6 +243,7 @@
                     title: 'New chat', created: Date.now(), updated: Date.now(), messages: [] };
         convs.unshift(c); activeId = c.id;
         store.setItem(ACTIVE_KEY, activeId); saveConvs(convs);
+        try { window.Xenon.resetContext(); } catch (_) {}
         return c;
     }
     function currentConversation() {
@@ -314,6 +315,7 @@
         if (activeId === id) { closeSidebar(); return; }
         try { window.Xenon.stopSpeaking(); } catch (_) {}
         if (window.__xenonTtsState) window.__xenonTtsState('idle');
+        try { window.Xenon.resetContext(); } catch (_) {}
         activeId = id; store.setItem(ACTIVE_KEY, activeId);
         renderChat(); renderHistory(); closeSidebar();
     }
@@ -635,10 +637,29 @@
         try { window.Xenon.showGenerationNotification('Generating reply…'); } catch (_) {}
 
         const s = JSON.parse(window.Xenon.getSettings());
-        const wrapped =
-            '<|im_start|>system\n' + s.system + '<|im_end|>\n' +
-            '<|im_start|>user\n' + userText + '<|im_end|>\n' +
-            '<|im_start|>assistant\n';
+        /* Multi-turn: if there's earlier history in this conversation,
+         * tell the C layer to keep the KV cache. Otherwise start fresh. */
+        const c = currentConversation();
+        const historyLen = c.messages.length;
+        try {
+            if (historyLen > 1) window.Xenon.continueContext();
+            else                window.Xenon.resetContext();
+        } catch (_) {}
+
+        /* When continuing, send ONLY the new user turn — the KV cache
+         * already has the earlier history. When resetting, send the
+         * full system prompt. */
+        let wrapped;
+        if (historyLen > 1) {
+            wrapped =
+                '<|im_start|>user\n' + userText + '<|im_end|>\n' +
+                '<|im_start|>assistant\n';
+        } else {
+            wrapped =
+                '<|im_start|>system\n' + s.system + '<|im_end|>\n' +
+                '<|im_start|>user\n' + userText + '<|im_end|>\n' +
+                '<|im_start|>assistant\n';
+        }
 
         const id = nextId++;
         let acc = '';
@@ -733,6 +754,7 @@
 
     function regenerateLast() {
         if (generating) return;
+        try { window.Xenon.resetContext(); } catch (_) {}
         const c = currentConversation();
         if (!c.messages.length) return;
         let lastUserIdx = -1;

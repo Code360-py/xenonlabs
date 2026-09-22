@@ -88,6 +88,14 @@ XENONLABS_API xenon_status_t xenon_generate_stream(xenon_context_t *ctx,
  * an in-flight xenon_generate or xenon_generate_stream. */
 XENONLABS_API void xenon_cancel(xenon_context_t *ctx);
 
+/* Multi-turn support.
+ * xenon_continue() tells the context that the next prompt is a
+ * continuation of the previous one — the KV cache is preserved and
+ * only new tokens are decoded.
+ * xenon_reset_context() clears the KV cache for a fresh conversation. */
+XENONLABS_API void xenon_continue(xenon_context_t *ctx);
+XENONLABS_API void xenon_reset_context(xenon_context_t *ctx);
+
 /* Utility */
 XENONLABS_API void         xenon_free_string(char *s);
 XENONLABS_API const char  *xenon_status_str(xenon_status_t s);

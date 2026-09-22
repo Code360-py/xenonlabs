@@ -27,6 +27,8 @@ struct xenon_context {
     const struct llama_vocab *vocab;
     int                       n_threads;
     atomic_int                cancel_requested;
+    int                       n_past;       /* tokens already in KV cache */
+    int                       keep_context; /* 1 = preserve KV on next run */
 };
 
 /* ------------------------------------------------------------------ */
@@ -204,7 +206,7 @@ static struct llama_batch make_batch(const llama_token *toks, int n, int pos0) {
 }
 
 /* Recreate the llama_context to clear KV state — portable across forks. */
-static int reset_context(xenon_context_t *c) {
+static int fresh_context(xenon_context_t *c) {
     struct llama_context_params cp = llama_context_default_params();
     cp.n_ctx     = (uint32_t)c->parent->n_ctx;
     cp.n_threads = c->n_threads;
@@ -215,8 +217,20 @@ static int reset_context(xenon_context_t *c) {
 
     if (c->ctx) llama_free(c->ctx);
     c->ctx = fresh;
+    c->n_past = 0;
     atomic_store(&c->cancel_requested, 0);
     return 0;
+}
+
+void xenon_continue(xenon_context_t *ctx) {
+    if (ctx) ctx->keep_context = 1;
+}
+
+void xenon_reset_context(xenon_context_t *ctx) {
+    if (!ctx) return;
+    ctx->keep_context = 0;
+    ctx->n_past = 0;
+    atomic_store(&ctx->cancel_requested, 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -264,7 +278,7 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
         llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     /* --- decode prompt at positions 0..N-1 --- */
-    int n_past = 0;
+    int n_past = use_n_past;
     struct llama_batch pb = make_batch(toks, n_prompt, n_past);
     int rc = llama_decode(c->ctx, pb);
     llama_batch_free(pb);
@@ -304,6 +318,7 @@ static int xenon_run(xenon_context_t *c, const char *prompt,
         ++n_gen;
     }
 
+    c->n_past = n_past;
     llama_sampler_free(smpl);
     return 0;
 }

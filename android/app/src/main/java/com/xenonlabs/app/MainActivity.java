@@ -52,6 +52,8 @@ public class MainActivity extends AppCompatActivity {
     private native int  nativeInit(String path);
     private native void nativeShutdown();
     private native void nativeCancelGeneration();
+    private native void nativeContinueContext();
+    private native void nativeResetContext();
 
     private native int  nativeGenerateStream(String prompt, int maxTokens,
                                              float temperature, float topP, int topK,
@@ -505,6 +507,16 @@ public class MainActivity extends AppCompatActivity {
         try { nativeCancelGeneration(); } catch (Throwable ignored) {}
     }
 
+    @JavascriptInterface
+    public void continueContext() {
+        try { nativeContinueContext(); } catch (Throwable ignored) {}
+    }
+
+    @JavascriptInterface
+    public void resetContext() {
+        try { nativeResetContext(); } catch (Throwable ignored) {}
+    }
+
     public class Bridge {
         @JavascriptInterface public int    loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void   shutdown()                                 { MainActivity.this.shutdown(); }
@@ -529,6 +541,8 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void   showGenerationNotification(String text)    { MainActivity.this.showGenerationNotification(text); }
         @JavascriptInterface public void   hideGenerationNotification()              { MainActivity.this.hideGenerationNotification(); }
         @JavascriptInterface public void   cancelGeneration()                        { MainActivity.this.cancelGeneration(); }
+        @JavascriptInterface public void   continueContext()                         { MainActivity.this.continueContext(); }
+        @JavascriptInterface public void   resetContext()                            { MainActivity.this.resetContext(); }
         @JavascriptInterface public void   saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
     }
 }

@@ -534,6 +534,7 @@
         setIsland('generating', 'Thinking…', '0 tok');
         setHeaderThinking(true);
         showThinkingInBubble(asstTextEl);
+        try { window.Xenon.showGenerationNotification('Generating reply…'); } catch (_) {}
 
         const s = JSON.parse(window.Xenon.getSettings());
         const wrapped =
@@ -567,6 +568,7 @@
             onDone: () => {
                 clearThinkingInBubble(asstTextEl);
                 setHeaderThinking(false);
+                try { window.Xenon.hideGenerationNotification(); } catch (_) {}
                 asstRow.classList.remove('typing');
                 asstRow.querySelector('.xl-msg-actions').style.display = '';
                 if (!acc) asstTextEl.textContent = '[no output]';
@@ -584,6 +586,7 @@
             onError: msg => {
                 clearThinkingInBubble(asstTextEl);
                 setHeaderThinking(false);
+                try { window.Xenon.hideGenerationNotification(); } catch (_) {}
                 asstRow.classList.remove('typing');
                 asstRow.querySelector('.xl-msg-actions').style.display = '';
                 asstTextEl.textContent = '[error: ' + msg + ']';

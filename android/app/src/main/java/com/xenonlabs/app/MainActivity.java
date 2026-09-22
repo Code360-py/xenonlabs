@@ -2,8 +2,12 @@ package com.xenonlabs.app;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.provider.OpenableColumns;
@@ -20,6 +24,8 @@ import android.webkit.WebViewClient;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -55,6 +61,8 @@ public class MainActivity extends AppCompatActivity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long currentCallbackId = -1;
     private TextToSpeech tts;
+    private static final String NOTIF_CHANNEL_ID = "xenon-generation";
+    private static final int NOTIF_ID = 42;
     private volatile boolean ttsReady = false;
     private ActivityResultLauncher<String[]> filePicker;
     private volatile boolean importing = false;
@@ -413,6 +421,59 @@ public class MainActivity extends AppCompatActivity {
         eval("window.__xenonTtsState && window.__xenonTtsState('idle');");
     }
 
+    /* ============================================================
+       Notifications
+       ============================================================ */
+
+    private void ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null && nm.getNotificationChannel(NOTIF_CHANNEL_ID) == null) {
+                NotificationChannel ch = new NotificationChannel(
+                    NOTIF_CHANNEL_ID,
+                    "Generation",
+                    NotificationManager.IMPORTANCE_LOW);
+                ch.setDescription("Shown while the model is generating");
+                ch.setShowBadge(false);
+                nm.createNotificationChannel(ch);
+            }
+        }
+    }
+
+    private PendingIntent openAppIntent() {
+        Intent i = new Intent(this, MainActivity.class);
+        i.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return PendingIntent.getActivity(this, 0, i, flags);
+    }
+
+    @JavascriptInterface
+    public void showGenerationNotification(String text) {
+        if (text == null) text = "Generating…";
+        ensureNotificationChannel();
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle("XenonLabs")
+            .setContentText(text)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(openAppIntent());
+        try {
+            NotificationManagerCompat.from(this).notify(NOTIF_ID, b.build());
+        } catch (SecurityException ignored) { /* permission not granted */ }
+    }
+
+    @JavascriptInterface
+    public void hideGenerationNotification() {
+        try {
+            NotificationManagerCompat.from(this).cancel(NOTIF_ID);
+        } catch (Throwable ignored) {}
+    }
+
     public class Bridge {
         @JavascriptInterface public int    loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void   shutdown()                                 { MainActivity.this.shutdown(); }
@@ -434,5 +495,7 @@ public class MainActivity extends AppCompatActivity {
     
         @JavascriptInterface public void   speak(String text)                         { MainActivity.this.speak(text); }
         @JavascriptInterface public void   stopSpeaking()                             { MainActivity.this.stopSpeaking(); }
+        @JavascriptInterface public void   showGenerationNotification(String text)    { MainActivity.this.showGenerationNotification(text); }
+        @JavascriptInterface public void   hideGenerationNotification()              { MainActivity.this.hideGenerationNotification(); }
     }
 }

@@ -208,6 +208,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
+        /* Handle "New chat" tap from widget */
+        if (getIntent() != null && getIntent().getBooleanExtra("xenon_new_chat", false)) {
+            getIntent().removeExtra("xenon_new_chat");
+            /* JS will see this via a flag set after loadUrl */
+        }
+
         filePicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(),
             uri -> {
@@ -474,6 +480,15 @@ public class MainActivity extends AppCompatActivity {
         } catch (Throwable ignored) {}
     }
 
+    @JavascriptInterface
+    public void saveWidgetReply(String text) {
+        if (text == null) text = "";
+        String trimmed = text.length() > 200 ? text.substring(0, 200) + "…" : text;
+        getSharedPreferences(XenonWidget.PREFS, MODE_PRIVATE)
+            .edit().putString(XenonWidget.KEY_LAST, trimmed).apply();
+        try { XenonWidget.refresh(this); } catch (Throwable ignored) {}
+    }
+
     public class Bridge {
         @JavascriptInterface public int    loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void   shutdown()                                 { MainActivity.this.shutdown(); }
@@ -497,5 +512,6 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void   stopSpeaking()                             { MainActivity.this.stopSpeaking(); }
         @JavascriptInterface public void   showGenerationNotification(String text)    { MainActivity.this.showGenerationNotification(text); }
         @JavascriptInterface public void   hideGenerationNotification()              { MainActivity.this.hideGenerationNotification(); }
+        @JavascriptInterface public void   saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
     }
 }

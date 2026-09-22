@@ -569,6 +569,7 @@
                 clearThinkingInBubble(asstTextEl);
                 setHeaderThinking(false);
                 try { window.Xenon.hideGenerationNotification(); } catch (_) {}
+                try { window.Xenon.saveWidgetReply(acc || ''); } catch (_) {}
                 asstRow.classList.remove('typing');
                 asstRow.querySelector('.xl-msg-actions').style.display = '';
                 if (!acc) asstTextEl.textContent = '[no output]';

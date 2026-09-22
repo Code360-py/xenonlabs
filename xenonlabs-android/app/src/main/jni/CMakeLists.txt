@@ -10,8 +10,12 @@ target_include_directories(xenonlabs_jni PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/llama_include)
 
 set(LLAMA_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI})
+
 target_link_libraries(xenonlabs_jni
     ${LLAMA_LIB_DIR}/libllama.so
+    ${LLAMA_LIB_DIR}/libggml.so
+    ${LLAMA_LIB_DIR}/libggml-base.so
+    ${LLAMA_LIB_DIR}/libggml-cpu.so
     log
     m)
 

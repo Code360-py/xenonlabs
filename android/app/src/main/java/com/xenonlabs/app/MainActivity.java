@@ -83,6 +83,7 @@ public class MainActivity extends AppCompatActivity {
     private volatile boolean ttsReady = false;
 
     private ActivityResultLauncher<String[]> filePicker;
+    private ActivityResultLauncher<String[]> importPicker;
     private volatile boolean importing = false;
 
     /**
@@ -113,6 +114,31 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 new Thread(() -> importGguf(uri), "xenon-import").start();
+            });
+
+        importPicker = registerForActivityResult(
+            new ActivityResultContracts.OpenDocument(),
+            uri -> {
+                if (uri == null) return;
+                new Thread(() -> {
+                    try {
+                        StringBuilder sb = new StringBuilder();
+                        try (InputStream in = getContentResolver().openInputStream(uri);
+                             java.io.BufferedReader br = new java.io.BufferedReader(
+                                 new java.io.InputStreamReader(in, "UTF-8"))) {
+                            char[] buf = new char[8192];
+                            int n;
+                            while ((n = br.read(buf)) > 0) sb.append(buf, 0, n);
+                        }
+                        String json = sb.toString();
+                        eval("window.__xenonBackupLoaded && window.__xenonBackupLoaded("
+                             + JSONObject.quote(json) + ");");
+                    } catch (Throwable t) {
+                        Log.e(TAG, "importBackup read failed", t);
+                        eval("window.__xenonImportError && window.__xenonImportError("
+                             + JSONObject.quote(String.valueOf(t.getMessage())) + ");");
+                    }
+                }, "xenon-import-backup").start();
             });
 
         try {
@@ -782,6 +808,58 @@ public class MainActivity extends AppCompatActivity {
     /* JS bridge                                                    */
     /* ============================================================ */
 
+    /* ============================================================ */
+    /* Backup export / import                                       */
+    /* ============================================================ */
+
+    @JavascriptInterface
+    public void exportBackup(String json, String suggestedName) {
+        try {
+            String name = (suggestedName == null || suggestedName.isEmpty())
+                ? ("xenonlabs-backup-" + System.currentTimeMillis() + ".json")
+                : suggestedName;
+            if (!name.endsWith(".json")) name += ".json";
+
+            File dir = new File(getCacheDir(), "exports");
+            if (!dir.exists() && !dir.mkdirs()) {
+                toastViaJs("Cannot create export dir");
+                return;
+            }
+            File out = new File(dir, name);
+            try (FileOutputStream fos = new FileOutputStream(out)) {
+                fos.write(json.getBytes("UTF-8"));
+            }
+
+            Uri uri = FileProvider.getUriForFile(
+                this, getPackageName() + ".fileprovider", out);
+
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("application/json");
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(share, "Save backup"));
+
+            toastViaJs("Backup ready to save");
+        } catch (Throwable t) {
+            Log.e(TAG, "exportBackup failed", t);
+            toastViaJs("Export failed: " + t.getMessage());
+        }
+    }
+
+    @JavascriptInterface
+    public void importBackup() {
+        ui.post(() -> {
+            try {
+                importPicker.launch(new String[]{
+                    "application/json", "text/plain", "*/*"});
+            } catch (Throwable t) {
+                Log.e(TAG, "importBackup launch failed", t);
+                eval("window.__xenonImportError && window.__xenonImportError("
+                     + JSONObject.quote(String.valueOf(t.getMessage())) + ");");
+            }
+        });
+    }
+
     public class Bridge {
         @JavascriptInterface public int     loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void    shutdown()                                 { MainActivity.this.shutdown(); }
@@ -810,5 +888,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void    resetContext()                              { MainActivity.this.resetContext(); }
         @JavascriptInterface public void    downloadAndInstallApk(String u, String v)   { MainActivity.this.downloadAndInstallApk(u, v); }
         @JavascriptInterface public void    saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
+        @JavascriptInterface public void    exportBackup(String json, String name) { MainActivity.this.exportBackup(json, name); }
+        @JavascriptInterface public void    importBackup()                         { MainActivity.this.importBackup(); }
     }
 }

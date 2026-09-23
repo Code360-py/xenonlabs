@@ -1023,9 +1023,10 @@
     function exportAll() {
         try {
             const data = {
-                version: 1,
+                version: 2,
                 exported: new Date().toISOString(),
                 app: 'XenonLabs',
+                activeConversationId: activeId || null,
                 settings: {
                     maxTokens: +document.getElementById('sMax').value,
                     temperature: +document.getElementById('sTemp').value / 100,
@@ -1038,68 +1039,88 @@
                     system: document.getElementById('sSystem').value,
                     theme: store.getItem('xenon.theme') || 'dark',
                     accent: store.getItem('xenon.accent') || 'blue',
-                    markdown: store.getItem('xenon.md') !== '0'
+                    markdown: store.getItem('xenon.md') !== '0',
+                    streaming: store.getItem('xenon.streaming') !== '0'
                 },
                 conversations: convs
             };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'xenonlabs-backup-' + Date.now() + '.json';
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-            toast('Backup exported');
-        } catch (e) { toast('Export failed: ' + e.message, 'fa-solid fa-triangle-exclamation'); }
+            const json = JSON.stringify(data, null, 2);
+            const fname = 'xenonlabs-backup-' + Date.now() + '.json';
+
+            if (window.Xenon && window.Xenon.exportBackup) {
+                window.Xenon.exportBackup(json, fname);
+            } else {
+                toast('Export not available', 'fa-solid fa-triangle-exclamation');
+            }
+        } catch (e) {
+            toast('Export failed: ' + e.message, 'fa-solid fa-triangle-exclamation');
+        }
     }
 
-    function importAll(file) {
-        const reader = new FileReader();
-        reader.onload = e => {
-            try {
-                const data = JSON.parse(e.target.result);
-                if (!data || typeof data !== 'object') throw new Error('bad JSON');
-                if (data.settings) {
-                    const s = data.settings;
-                    window.Xenon.saveSettings(
-                        +s.maxTokens || 256, +s.temperature || 0.7,
-                        +s.topP || 0.95, +s.topK || 40,
-                        s.system || DEFAULTS.system);
-                    if (s.repeatPenalty) store.setItem('xenon.repeatPenalty', s.repeatPenalty);
-                    if (s.threads)       store.setItem('xenon.threads', s.threads);
-                    if (s.ctx)           store.setItem('xenon.ctx', s.ctx);
-                    if (s.seed != null)  store.setItem('xenon.seed', s.seed);
-                    if (s.theme)         store.setItem('xenon.theme', s.theme);
-                    if (s.accent)        store.setItem('xenon.accent', s.accent);
-                    if (s.markdown != null) store.setItem('xenon.md', s.markdown ? '1' : '0');
+    function importAllFromString(json) {
+        try {
+            const data = JSON.parse(json);
+            if (!data || typeof data !== 'object') throw new Error('bad JSON');
+            if (data.app !== 'XenonLabs') throw new Error('not a XenonLabs backup');
+
+            if (data.settings) {
+                const s = data.settings;
+                const mt = (s.maxTokens  != null) ? +s.maxTokens  : 256;
+                const tp = (s.temperature!= null) ? +s.temperature: 0.7;
+                const pp = (s.topP       != null) ? +s.topP       : 0.95;
+                const tk = (s.topK       != null) ? +s.topK       : 40;
+                window.Xenon.saveSettings(mt, tp, pp, tk, s.system || DEFAULTS.system);
+                if (s.repeatPenalty) store.setItem('xenon.repeatPenalty', s.repeatPenalty);
+                if (s.threads)       store.setItem('xenon.threads', s.threads);
+                if (s.ctx)           store.setItem('xenon.ctx', s.ctx);
+                if (s.seed != null)  store.setItem('xenon.seed', s.seed);
+                if (s.theme)         store.setItem('xenon.theme', s.theme);
+                if (s.accent)        store.setItem('xenon.accent', s.accent);
+                if (s.markdown != null)  store.setItem('xenon.md', s.markdown ? '1' : '0');
+                if (s.streaming != null) store.setItem('xenon.streaming', s.streaming ? '1' : '0');
+            }
+
+            if (Array.isArray(data.conversations)) {
+                const valid = data.conversations.filter(c =>
+                    c && typeof c === 'object' &&
+                    typeof c.id === 'string' &&
+                    Array.isArray(c.messages));
+                if (valid.length !== data.conversations.length) {
+                    throw new Error('backup has malformed conversations');
                 }
-                if (Array.isArray(data.conversations)) {
-                    convs = data.conversations;
-                    saveConvs(convs);
-                    activeId = convs[0] ? convs[0].id : null;
-                    store.setItem(ACTIVE_KEY, activeId || '');
+                convs = valid;
+                saveConvs(convs);
+
+                if (data.activeConversationId &&
+                    valid.find(c => c.id === data.activeConversationId)) {
+                    activeId = data.activeConversationId;
+                } else {
+                    activeId = valid[0] ? valid[0].id : null;
                 }
-                loadSettings();
-                renderHistory();
-                renderChat();
-                toast('Backup imported');
-            } catch (err) { toast('Import failed: ' + err.message, 'fa-solid fa-triangle-exclamation'); }
-        };
-        reader.readAsText(file);
+                store.setItem(ACTIVE_KEY, activeId || '');
+            }
+
+            loadSettings();
+            renderHistory();
+            renderChat();
+            toast('Backup imported');
+        } catch (err) {
+            toast('Import failed: ' + err.message, 'fa-solid fa-triangle-exclamation');
+        }
     }
+    window.__xenonBackupLoaded = importAllFromString;
 
     const exportBtn = document.getElementById('exportData');
     if (exportBtn) exportBtn.onclick = exportAll;
     const importBtn = document.getElementById('importData');
-    const importFileEl = document.getElementById('importFile');
-    if (importBtn && importFileEl) {
-        importBtn.onclick = () => importFileEl.click();
-        importFileEl.addEventListener('change', () => {
-            if (importFileEl.files && importFileEl.files[0]) {
-                importAll(importFileEl.files[0]);
-                importFileEl.value = '';
+    if (importBtn) {
+        importBtn.onclick = () => {
+            if (!window.Xenon || !window.Xenon.importBackup) {
+                toast('Import not available', 'fa-solid fa-triangle-exclamation');
+                return;
             }
-        });
+            window.Xenon.importBackup();
+        };
     }
 
     /* ---------- danger zone ---------- */

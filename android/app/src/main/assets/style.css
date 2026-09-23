@@ -1257,3 +1257,17 @@ body[data-accent="graphite"] { --accent: #6b7280; --accent-2: #4b5563; }
 .xl-send-btn.stopping:active {
     transform: scale(.94);
 }
+
+/* ============================================================
+   Message timing meta (response time, tokens, tok/s)
+   ============================================================ */
+
+.xl-msg-meta {
+    font-size: 11px;
+    color: var(--fg-dim);
+    margin-top: 8px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+    user-select: none;
+    -webkit-user-select: none;
+}

@@ -268,6 +268,7 @@
         if (!firstUser) return;
         const t = firstUser.text.replace(/\s+/g, ' ').trim();
         c.title = t.length > 34 ? t.slice(0, 34).trim() + '…' : t;
+        c._titleFromFirstMsg = true;   /* fallback; auto-title may override */
     }
     function persistActive() {
         const c = findConv(activeId); if (!c) return;
@@ -375,9 +376,66 @@
     /* ---------- streaming dispatcher ---------- */
     let nextId = 1;
     const streams = new Map();
+    let loadedModelFilename = null;   /* filename currently loaded in native */
+    const TITLE_CB_ID = -999;         /* special callback id for auto-title */
+
     window.__xenonToken = (id, piece) => { const s = streams.get(id); if (s) s.onToken(piece); };
     window.__xenonDone  = (id) => { const s = streams.get(id); streams.delete(id); if (s) s.onDone(); };
     window.__xenonError = (id, msg) => { const s = streams.get(id); streams.delete(id); if (s) s.onError(msg); };
+
+    /* ============================================================ */
+    /* Auto-titled conversations                                    */
+    /* ============================================================ */
+    function maybeAutoTitle(conv) {
+        if (!conv) return;
+        if (conv.title && conv.title !== 'New chat' && !conv._titleFromFirstMsg) return;
+        if (conv._titleRequested) return;
+        const firstUser = conv.messages.find(m => m.role === 'user');
+        const firstAsst = conv.messages.find(m => m.role === 'assistant');
+        if (!firstUser || !firstAsst) return;
+        conv._titleRequested = true;
+
+        const prompt =
+            'You are a titler. Read the exchange below and output ONLY a 3-5 word title. '+
+            'No quotes. No punctuation. No explanation. Title must not start with "Title:".\n\n'+
+            'User: ' + firstUser.text.slice(0, 400) + '\n' +
+            'Assistant: ' + firstAsst.text.slice(0, 400) + '\n\n' +
+            'Title:';
+
+        let acc = '';
+        streams.set(TITLE_CB_ID, {
+            onToken: piece => {
+                acc += piece;
+                /* stop early on newline or 60 chars */
+                if (acc.length > 60 || acc.indexOf('\n') !== -1) {
+                    try { window.Xenon.cancelGeneration(); } catch (_) {}
+                }
+            },
+            onDone: () => {
+                const t = acc.replace(/\s+/g, ' ').trim()
+                            .replace(/^title:\s*/i, '')
+                            .replace(/["'.“”‘’]+/g, '')
+                            .trim();
+                if (t.length >= 2 && t.length <= 60) {
+                    const c2 = findConv(conv.id);
+                    if (c2) {
+                        c2.title = t;
+                        c2._titleFromFirstMsg = false;
+                        saveConvs(convs);
+                        renderHistory();
+                    }
+                }
+            },
+            onError: () => { /* silent — keep the truncated title */ }
+        });
+
+        try {
+            window.Xenon.generateStream(prompt, 24, 0.3, 0.9, 20, TITLE_CB_ID);
+        } catch (_) {
+            streams.delete(TITLE_CB_ID);
+        }
+    }
+
 
     window.__xenonDownload = (id, pct, done, total, finished) => {
         const el = document.querySelector('[data-dl="' + id + '"]');
@@ -582,15 +640,32 @@
             const m = c.messages[i];
             const editable = (m.role === 'user') && (i === n - 2) && (n >= 2) && (c.messages[n - 1].role === 'assistant');
             const regenerable = (m.role === 'assistant') && (i === n - 1);
-            if (m.role === 'user') messages.appendChild(makeUserRow(m.text, { editable }));
-            else                   messages.appendChild(makeAssistantRow(m.text, { regenerable }));
+            if (m.role === 'user') {
+                messages.appendChild(makeUserRow(m.text, { editable }));
+            } else {
+                const row = makeAssistantRow(m.text, { regenerable });
+                if (m.elapsedMs != null && m.tokens != null) {
+                    const metaEl = document.createElement('div');
+                    metaEl.className = 'xl-msg-meta';
+                    metaEl.textContent = (m.elapsedMs / 1000).toFixed(1) + 's · ' +
+                        m.tokens + ' tok · ' + (m.tps || (m.tokens / (m.elapsedMs / 1000))).toFixed(1) + ' tok/s';
+                    row.appendChild(metaEl);
+                }
+                messages.appendChild(row);
+            }
         }
         scrollBottom();
     }
 
-    function appendMessage(role, text) {
+    function appendMessage(role, text, meta) {
         const c = currentConversation();
-        c.messages.push({ role, text, ts: Date.now() });
+        const msg = { role, text, ts: Date.now() };
+        if (meta) {
+            if (meta.elapsedMs != null) msg.elapsedMs = meta.elapsedMs;
+            if (meta.tokens    != null) msg.tokens    = meta.tokens;
+            if (meta.tps       != null) msg.tps       = meta.tps;
+        }
+        c.messages.push(msg);
         updateTitleFromFirstMessage(c);
         return c;
     }
@@ -677,6 +752,7 @@
         let tokens = 0;
         let firstTokenAt = 0;
         let lastDisplayAt = 0;
+        const startedAt = performance.now();
 
         streams.set(id, {
             onToken: piece => {
@@ -717,7 +793,32 @@
                     asstRow.dataset.raw = acc;
                     if (mdEnabled()) renderMarkdownInto(asstTextEl, acc);
                 }
-                appendMessage('assistant', acc || '[no output]');
+
+                /* Response time */
+                const elapsedMs = Math.max(1, performance.now() - startedAt);
+                const tps = tokens > 0 ? (tokens / (elapsedMs / 1000)) : 0;
+                const metaEl = document.createElement('div');
+                metaEl.className = 'xl-msg-meta';
+                metaEl.textContent = (elapsedMs / 1000).toFixed(1) + 's · ' +
+                    tokens + ' tok · ' + tps.toFixed(1) + ' tok/s';
+                if (asstRow.querySelector('.xl-msg-actions')) {
+                    asstRow.querySelector('.xl-msg-actions').insertAdjacentElement('afterend', metaEl);
+                } else {
+                    asstRow.appendChild(metaEl);
+                }
+
+                appendMessage('assistant', acc || '[no output]', {
+                    elapsedMs: elapsedMs,
+                    tokens: tokens,
+                    tps: tps
+                });
+
+                /* Auto-title on the first exchange */
+                try {
+                    const c2 = currentConversation();
+                    const assistantCount = c2.messages.filter(m => m.role === 'assistant').length;
+                    if (assistantCount === 1) setTimeout(() => maybeAutoTitle(c2), 400);
+                } catch (_) {}
                 persistActive();
                 generating = false;
                 setSendButtonMode('send');
@@ -851,17 +952,41 @@
                 actions.appendChild(btn);
             } else {
                 const use = document.createElement('button');
-                use.className = m.active ? '' : 'primary';
-                use.innerHTML = m.active
-                    ? '<i class="fa-solid fa-check"></i> Selected'
-                    : '<i class="fa-solid fa-play"></i> Use';
-                use.disabled = m.active;
-                use.onclick = async () => {
-                    window.Xenon.setActiveModel(m.filename);
-                    toast('Switched to ' + m.name);
-                    await loadModels();
-                    await reloadModel();
-                };
+                const isLoaded = (loadedModelFilename === m.filename);
+                if (m.active && isLoaded) {
+                    use.className = '';
+                    use.innerHTML = '<i class="fa-solid fa-power-off"></i> Unload';
+                    use.onclick = async () => {
+                        try { window.Xenon.shutdown(); } catch (_) {}
+                        loadedModelFilename = null;
+                        setIsland(null, 'XenonLabs', 'No model');
+                        const hm = $('#headerModel');
+                        if (hm) {
+                            hm.classList.remove('ready','busy');
+                            const sp = hm.querySelector('span:last-child');
+                            if (sp) sp.textContent = 'No model';
+                        }
+                        const sm = $('#sidebarModel');
+                        if (sm) sm.innerHTML = '<i class="fa-solid fa-circle-notch"></i> No model loaded';
+                        toast('Model unloaded');
+                        await loadModels();
+                    };
+                } else if (m.active) {
+                    use.className = 'primary';
+                    use.innerHTML = '<i class="fa-solid fa-play"></i> Load';
+                    use.onclick = async () => {
+                        await reloadModel();
+                    };
+                } else {
+                    use.className = 'primary';
+                    use.innerHTML = '<i class="fa-solid fa-play"></i> Load';
+                    use.onclick = async () => {
+                        window.Xenon.setActiveModel(m.filename);
+                        toast('Switched to ' + m.name);
+                        await loadModels();
+                        await reloadModel();
+                    };
+                }
                 actions.appendChild(use);
 
                 const del = document.createElement('button');
@@ -903,9 +1028,11 @@
         setTimeout(() => {
             const rc = window.Xenon.loadModel(path);
             if (rc === 0) {
+                loadedModelFilename = active.filename;
                 setIsland('ready', active.name, '');
                 toast('Model ready: ' + active.name);
             } else {
+                loadedModelFilename = null;
                 let why = 'code ' + rc;
                 try {
                     if (window.Xenon.statusString) why = window.Xenon.statusString(rc);

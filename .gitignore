@@ -50,3 +50,8 @@ package-lock.json
 *.keystore
 *.p12
 *_key.txt
+
+# Exception: the stable debug keystore used for consistent signing
+# between local builds and CI. This is NOT a release keystore —
+# it only signs debug APKs for personal sideloading.
+!android/app/xenon-debug.keystore

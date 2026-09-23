@@ -1,29 +1,52 @@
-# Host build
+# --- Build outputs ---------------------------------------------------
 build/
 *.o
 *.so
 *.dylib
 *.dll
+*.a
 
-# Models
+# --- Models ----------------------------------------------------------
 *.gguf
+*.gguf.part
 models/*
 !models/.gitkeep
 
-# Android build outputs
+# --- Android build outputs -------------------------------------------
 android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
-android/app/src/main/jni/llama_include/*.h
-!android/app/src/main/jni/llama_include/xenonlabs.h
+android/.cxx/
+android/app/.cxx/
+*.apk
+*.aab
 
-# Editors
+# --- Android native inputs -------------------------------------------
+# llama.cpp headers and prebuilt libs are populated by CI; do not commit.
+android/app/src/main/jni/llama_include/*.h
+!android/app/src/main/jni/llama_include/.gitkeep
+android/app/src/main/jniLibs/**/*.so
+!android/app/src/main/jniLibs/.gitkeep
+!android/app/src/main/jniLibs/**/.gitkeep
+
+# --- CI scratch ------------------------------------------------------
+llama.cpp/
+preview/
+
+# --- Node ------------------------------------------------------------
+node_modules/
+package-lock.json
+
+# --- Editors ---------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 .DS_Store
 
-# CI scratch
-llama.cpp/
-preview/
+# --- Secrets ---------------------------------------------------------
+# Never commit a keystore. Use GitHub Secrets.
+*.jks
+*.keystore
+*.p12
+*_key.txt

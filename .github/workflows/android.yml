@@ -5,15 +5,32 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
   workflow_dispatch:
+
+# ---------------------------------------------------------------------
+# Pinned llama.cpp revision. If you bump this, update apk-smoke.yml too.
+# Find the latest at https://github.com/ggml-org/llama.cpp/commits/master
+# ---------------------------------------------------------------------
+env:
+  LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp
+  LLAMA_CPP_SHA: 6e60f35608ec6918b44a9839c0c433687165f086
+  ANDROID_ABI: arm64-v8a
+  ANDROID_API: 24
 
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -28,29 +45,38 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-34 build-tools;34.0.0 ndk;26.1.10909125 cmake;3.22.1'
+          packages: >-
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;26.1.10909125
+            cmake;3.22.1
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
-      - name: Cache llama.cpp
+      - name: Cache llama.cpp source + build
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-android-arm64-v11
+          key: llama-cpp-${{ env.LLAMA_CPP_SHA }}-${{ env.ANDROID_ABI }}-ndk26.1.10909125-cmake3.22.1-v1
 
-      - name: Clone llama.cpp
+      - name: Clone llama.cpp (pinned)
         run: |
-          if [ ! -d llama.cpp ]; then
-            git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          if [ ! -d llama.cpp/.git ]; then
+            git clone "$LLAMA_CPP_REPO" llama.cpp
           fi
+          cd llama.cpp
+          git fetch --tags origin
+          git checkout "$LLAMA_CPP_SHA"
+          git rev-parse HEAD
 
       - name: Configure llama.cpp
         run: |
           cd llama.cpp
           cmake -S . -B build-android -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_ABI=$ANDROID_ABI \
+            -DANDROID_PLATFORM=android-$ANDROID_API \
             -DBUILD_SHARED_LIBS=ON \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -60,47 +86,64 @@ jobs:
             -DLLAMA_CURL=OFF \
             -DGGML_OPENMP=OFF
 
-      - name: Build libllama.so only
+      - name: Build libllama.so + friends
         run: |
           cd llama.cpp
           cmake --build build-android --target llama -j
 
       - name: Copy native libs
         run: |
-          DEST=android/app/src/main/jniLibs/arm64-v8a
-          mkdir -p $DEST
+          set -euo pipefail
+          DEST=android/app/src/main/jniLibs/$ANDROID_ABI
+          mkdir -p "$DEST"
 
           echo "--- .so files produced by llama.cpp ---"
           find llama.cpp/build-android -name '*.so' -type f | sort
 
-          cp llama.cpp/build-android/bin/libllama.so     $DEST/
-          cp llama.cpp/build-android/bin/libggml.so      $DEST/
-          cp llama.cpp/build-android/bin/libggml-base.so $DEST/
-          cp llama.cpp/build-android/bin/libggml-cpu.so  $DEST/
-
-          echo "--- files copied to jniLibs ---"
-          ls -lh $DEST/
-
+          # These four MUST exist. Fail loudly if any is missing.
           for f in libllama.so libggml.so libggml-base.so libggml-cpu.so; do
-            test -s "$DEST/$f" || { echo "MISSING: $DEST/$f"; exit 1; }
+            src=$(find llama.cpp/build-android -name "$f" -type f | head -1)
+            if [ -z "$src" ]; then
+              echo "::error::required library not produced: $f"
+              exit 1
+            fi
+            cp "$src" "$DEST/"
+            test -s "$DEST/$f" || { echo "::error::empty file: $DEST/$f"; exit 1; }
           done
+
+          ls -lh "$DEST/"
 
       - name: Copy llama headers
         run: |
+          set -euo pipefail
           DEST=android/app/src/main/jni/llama_include
-          mkdir -p $DEST
-          cp llama.cpp/include/llama.h     $DEST/ 2>/dev/null || true
-          cp llama.cpp/include/llama-cpp.h $DEST/ 2>/dev/null || true
-          cp llama.cpp/ggml/include/gguf.h $DEST/ 2>/dev/null || true
-          find llama.cpp/ggml -name 'ggml*.h' -exec cp {} $DEST/ \;
-          ls $DEST/ | head
+          mkdir -p "$DEST"
+
+          # llama.h
+          cp llama.cpp/include/llama.h "$DEST/llama.h"
+
+          # ggml headers — copy explicitly, no find-glob.
+          cp llama.cpp/ggml/include/ggml.h       "$DEST/ggml.h"
+          cp llama.cpp/ggml/include/ggml-alloc.h "$DEST/ggml-alloc.h"  2>/dev/null || true
+          cp llama.cpp/ggml/include/ggml-backend.h "$DEST/ggml-backend.h" 2>/dev/null || true
+          cp llama.cpp/ggml/include/ggml-cpu.h   "$DEST/ggml-cpu.h"    2>/dev/null || true
+          cp llama.cpp/ggml/include/ggml-metal.h "$DEST/ggml-metal.h"  2>/dev/null || true
+          cp llama.cpp/ggml/include/ggml-cuda.h  "$DEST/ggml-cuda.h"   2>/dev/null || true
+          cp llama.cpp/ggml/include/ggml-vulkan.h "$DEST/ggml-vulkan.h" 2>/dev/null || true
+          cp llama.cpp/ggml/include/gguf.h       "$DEST/gguf.h"         2>/dev/null || true
+
+          # Sanity: at least llama.h and ggml.h must be there.
+          test -s "$DEST/llama.h" || { echo "::error::missing llama.h"; exit 1; }
+          test -s "$DEST/ggml.h"  || { echo "::error::missing ggml.h";  exit 1; }
+
+          echo "--- headers copied ---"
+          ls "$DEST/" | head -20
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
       - name: Build debug APK
         working-directory: android
-        timeout-minutes: 10
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK

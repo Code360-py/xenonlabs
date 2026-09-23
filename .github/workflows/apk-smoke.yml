@@ -6,12 +6,23 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'src/**'
+      - 'include/**'
       - '.github/workflows/apk-smoke.yml'
+
+env:
+  LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp
+  LLAMA_CPP_SHA: 6e60f35608ec6918b44a9839c0c433687165f086
+  # x86_64 for the smoke test — GitHub's free runners are x86_64 and
+  # KVM-accelerated arm64 emulation is not available. Real releases
+  # are built for arm64-v8a by android.yml.
+  SMOKE_ABI: x86_64
+  ANDROID_API: 24
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -26,29 +37,37 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-34 build-tools;34.0.0 ndk;26.1.10909125 cmake;3.22.1'
+          packages: >-
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;26.1.10909125
+            cmake;3.22.1
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
-      - name: Cache llama.cpp
+      - name: Cache llama.cpp source + build
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-android-arm64-v12
+          key: llama-cpp-${{ env.LLAMA_CPP_SHA }}-${{ env.SMOKE_ABI }}-ndk26.1.10909125-cmake3.22.1-v1
 
-      - name: Clone llama.cpp
+      - name: Clone llama.cpp (pinned)
         run: |
-          if [ ! -d llama.cpp ]; then
-            git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          if [ ! -d llama.cpp/.git ]; then
+            git clone "$LLAMA_CPP_REPO" llama.cpp
           fi
+          cd llama.cpp
+          git fetch --tags origin
+          git checkout "$LLAMA_CPP_SHA"
 
-      - name: Configure llama.cpp
+      - name: Configure llama.cpp for x86_64
         run: |
           cd llama.cpp
           cmake -S . -B build-android -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_ABI=$SMOKE_ABI \
+            -DANDROID_PLATFORM=android-$ANDROID_API \
             -DBUILD_SHARED_LIBS=ON \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -63,61 +82,70 @@ jobs:
           cd llama.cpp
           cmake --build build-android --target llama -j
 
-      - name: Copy native libs
+      - name: Copy native libs (x86_64)
         run: |
-          DEST=android/app/src/main/jniLibs/arm64-v8a
-          mkdir -p $DEST
-          cp llama.cpp/build-android/bin/libllama.so     $DEST/
-          cp llama.cpp/build-android/bin/libggml.so      $DEST/
-          cp llama.cpp/build-android/bin/libggml-base.so $DEST/
-          cp llama.cpp/build-android/bin/libggml-cpu.so  $DEST/
-          ls -lh $DEST/
+          set -euo pipefail
+          DEST=android/app/src/main/jniLibs/$SMOKE_ABI
+          mkdir -p "$DEST"
+          for f in libllama.so libggml.so libggml-base.so libggml-cpu.so; do
+            src=$(find llama.cpp/build-android -name "$f" -type f | head -1)
+            [ -n "$src" ] || { echo "::error::missing $f"; exit 1; }
+            cp "$src" "$DEST/"
+            test -s "$DEST/$f" || { echo "::error::empty: $f"; exit 1; }
+          done
+          ls -lh "$DEST/"
 
       - name: Copy llama headers
         run: |
+          set -euo pipefail
           DEST=android/app/src/main/jni/llama_include
-          mkdir -p $DEST
-          cp llama.cpp/include/llama.h     $DEST/ 2>/dev/null || true
-          cp llama.cpp/include/llama-cpp.h $DEST/ 2>/dev/null || true
-          cp llama.cpp/ggml/include/gguf.h $DEST/ 2>/dev/null || true
-          find llama.cpp/ggml -name 'ggml*.h' -exec cp {} $DEST/ \;
+          mkdir -p "$DEST"
+          cp llama.cpp/include/llama.h "$DEST/llama.h"
+          cp llama.cpp/ggml/include/ggml.h "$DEST/ggml.h"
+          for h in ggml-alloc ggml-backend ggml-cpu gguf; do
+            cp "llama.cpp/ggml/include/$h.h" "$DEST/$h.h" 2>/dev/null || true
+          done
+          test -s "$DEST/llama.h" || { echo "::error::missing llama.h"; exit 1; }
+
+      # The app's build.gradle restricts ABI to arm64-v8a.
+      # Override it for the smoke test so we can run on x86_64.
+      - name: Patch build.gradle for x86_64 smoke
+        run: |
+          sed -i "s/abiFilters 'arm64-v8a'/abiFilters '$SMOKE_ABI'/" android/app/build.gradle
+          grep abiFilters android/app/build.gradle
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build debug APK
+      - name: Build debug APK (x86_64)
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Enable KVM (fast emulator)
+      - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Start emulator and run smoke test
+      - name: Run smoke test on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          arch: arm64-v8a
+          arch: x86_64
           profile: pixel_5
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+            -no-snapshot -no-metrics
           script: |
             set -e
-            echo "--- waiting for device ---"
             adb wait-for-device
-            adb shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
-            echo "--- installing APK ---"
+            adb shell 'while [ -z "$(getprop sys.boot_completed)" ]; do sleep 1; done'
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            echo "--- clearing logcat ---"
             adb logcat -c
-            echo "--- launching app ---"
             adb shell am start -n com.xenonlabs.app/.MainActivity
-            echo "--- waiting 8 s ---"
             sleep 8
-            echo "--- is process alive? ---"
             PID=$(adb shell pidof com.xenonlabs.app || true)
             if [ -z "$PID" ]; then
                 echo "FAIL: process not running"
@@ -125,23 +153,18 @@ jobs:
                 exit 1
             fi
             echo "PASS: pid=$PID"
-            echo "--- screenshot ---"
-            adb exec-out screencap -p > /tmp/screen.png || true
-            echo "--- logcat tail ---"
-            adb logcat -d -t 200
-            echo "--- checking for FATAL EXCEPTION ---"
             if adb logcat -d | grep -q "FATAL EXCEPTION"; then
-                echo "FAIL: crash detected in logcat"
+                echo "FAIL: crash detected"
                 adb logcat -d | grep -A 30 "FATAL EXCEPTION"
                 exit 1
             fi
             echo "PASS: no fatal exceptions"
 
-      - name: Upload screenshot
+      - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-screenshot
-          path: /tmp/screen.png
+          name: smoke-apk-x86_64
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: ignore
           retention-days: 7

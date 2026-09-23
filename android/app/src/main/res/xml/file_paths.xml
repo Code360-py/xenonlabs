@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paths that FileProvider is allowed to expose as content:// URIs.
+
+  Used by:
+    - In-app APK update   : filesDir()/updates/xenonlabs-*.apk
+    - Future: model share : filesDir()/*.gguf
+
+  The "updates" entry is the one that already exists. The "models"
+  entry is added so that if any future feature needs to hand a model
+  file to another app (share sheet, adb pull helper, etc.) it will
+  work without a manifest change.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <files-path name="downloads" path="updates/" />
-    <cache-path name="cache" path="updates/" />
+
+    <!-- filesDir()/updates/... -->
+    <files-path
+        name="updates"
+        path="updates/" />
+
+    <!-- filesDir()/  (covers .gguf models and any other file) -->
+    <files-path
+        name="files"
+        path="." />
+
+    <!-- cacheDir()/updates/... (unused today but harmless) -->
+    <cache-path
+        name="cache"
+        path="updates/" />
+
 </paths>

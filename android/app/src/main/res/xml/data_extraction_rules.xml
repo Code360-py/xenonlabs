@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  On Android 12+ (API 31+), this controls cloud backup and
+  device-to-device transfer. We exclude everything under files/
+  because it contains multi-GB model files.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" />
+        <exclude domain="database" />
+    </device-transfer>
+</data-extraction-rules>

@@ -902,8 +902,17 @@
         const path = window.Xenon.modelPath(active.filename);
         setTimeout(() => {
             const rc = window.Xenon.loadModel(path);
-            if (rc === 0) { setIsland('ready', active.name, ''); toast('Model ready: ' + active.name); }
-            else          { setIsland('error', 'Load failed', 'code ' + rc); toast('Load failed: code ' + rc, 'fa-solid fa-triangle-exclamation'); }
+            if (rc === 0) {
+                setIsland('ready', active.name, '');
+                toast('Model ready: ' + active.name);
+            } else {
+                let why = 'code ' + rc;
+                try {
+                    if (window.Xenon.statusString) why = window.Xenon.statusString(rc);
+                } catch (_) {}
+                setIsland('error', 'Load failed', why);
+                toast('Load failed: ' + why, 'fa-solid fa-triangle-exclamation');
+            }
             renderChat();
         }, 40);
     }
@@ -1243,4 +1252,10 @@
         console.log('[xenonlabs] boot complete');
         setTimeout(() => { try { checkForUpdates(); } catch (e) {} }, 1200);
     })();
+    /* Called from Java (MainActivity.toastViaJs). */
+    window.__xenonToast = function (msg) {
+        try { toast(String(msg || ''), 'fa-solid fa-circle-info'); }
+        catch (_) { console.log('[toast]', msg); }
+    };
+
 })();

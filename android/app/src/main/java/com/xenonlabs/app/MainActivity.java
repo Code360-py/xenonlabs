@@ -1,18 +1,20 @@
 package com.xenonlabs.app;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.speech.tts.TextToSpeech;
-import android.provider.OpenableColumns;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.OpenableColumns;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
@@ -21,104 +23,337 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.FileProvider;
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "XenonLabs";
-    private static boolean nativeLoaded = false;
+    private static final String NOTIF_CHANNEL_ID = "xenon-generation";
+    private static final int NOTIF_ID = 42;
+    private static final int REQ_POST_NOTIFS = 1001;
 
+    private static boolean nativeLoaded = false;
     static {
         try {
             System.loadLibrary("xenonlabs_jni");
             nativeLoaded = true;
         } catch (Throwable t) {
-            Log.e(TAG, "native load failed", t);
+            Log.e(TAG, "native library load failed", t);
         }
     }
 
-    private native int  nativeInit(String path);
-    private native void nativeShutdown();
-    private native void nativeCancelGeneration();
-    private native void nativeContinueContext();
-    private native void nativeResetContext();
-
-    private native int  nativeGenerateStream(String prompt, int maxTokens,
-                                             float temperature, float topP, int topK,
-                                             TokenCallback cb);
+    /* ---- native declarations (must match jni_bridge.c symbols) ---- */
+    private native int    nativeInit(String path);
+    private native void   nativeShutdown();
+    private native void   nativeCancelGeneration();
+    private native void   nativeContinueContext();
+    private native void   nativeResetContext();
+    private native int    nativeGenerateStream(String prompt, int maxTokens,
+                                               float temperature, float topP, int topK,
+                                               TokenCallback cb);
+    private native String nativeStatusString(int code);
 
     public interface TokenCallback { void onToken(String piece); }
 
+    /* ---- fields ---- */
     private WebView web;
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private volatile long currentCallbackId = -1;
+
     private TextToSpeech tts;
-    private static final String NOTIF_CHANNEL_ID = "xenon-generation";
-    private static final int NOTIF_ID = 42;
     private volatile boolean ttsReady = false;
+
     private ActivityResultLauncher<String[]> filePicker;
     private volatile boolean importing = false;
+
+    /**
+     * Generation runs on a dedicated thread so the UI thread stays
+     * responsive. We keep a reference so onDestroy can wait for it.
+     */
+    private volatile Thread genThread = null;
+
+    /* ============================================================ */
+    /* Lifecycle                                                    */
+    /* ============================================================ */
+
+    @SuppressLint("SetJavaScriptEnabled")
+    @Override
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
+
+        /* Android 13+ requires a runtime request for POST_NOTIFICATIONS
+         * or notifications silently fail. */
+        requestNotificationPermissionIfNeeded();
+
+        filePicker = registerForActivityResult(
+            new ActivityResultContracts.OpenDocument(),
+            uri -> {
+                importing = false;
+                if (uri == null) {
+                    eval("window.__xenonImportError && window.__xenonImportError('cancelled');");
+                    return;
+                }
+                new Thread(() -> importGguf(uri), "xenon-import").start();
+            });
+
+        try {
+            setContentView(R.layout.activity_main);
+
+            web = findViewById(R.id.web);
+            if (web == null) {
+                showCrash("onCreate", new RuntimeException("R.id.web not found"));
+                return;
+            }
+
+            WebSettings s = web.getSettings();
+            s.setJavaScriptEnabled(true);
+            s.setDomStorageEnabled(true);
+            s.setAllowFileAccess(true);
+            s.setAllowContentAccess(true);
+
+            web.setWebViewClient(new WebViewClient());
+            web.setWebChromeClient(new WebChromeClient() {
+                @Override public boolean onConsoleMessage(ConsoleMessage m) {
+                    Log.d("XenonWeb", m.message());
+                    return true;
+                }
+            });
+
+            web.addJavascriptInterface(new Bridge(), "Xenon");
+            web.loadUrl("file:///android_asset/index.html");
+
+            initTts();
+
+            /* Back button: if a generation is running, cancel it instead
+             * of killing the activity out from under the native call. */
+            getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+                @Override public void handleOnBackPressed() {
+                    if (genThread != null && genThread.isAlive()) {
+                        try { nativeCancelGeneration(); } catch (Throwable ignored) {}
+                        toastViaJs("Stopping…");
+                        return;
+                    }
+                    setEnabled(false);
+                    getOnBackPressedDispatcher().onBackPressed();
+                }
+            });
+
+            Log.i(TAG, "onCreate complete; nativeLoaded=" + nativeLoaded);
+
+            if (!nativeLoaded) {
+                toastViaJs("Native library failed to load — model features disabled");
+            }
+        } catch (Throwable t) {
+            showCrash("onCreate", t);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        try {
+            if (intent != null && intent.getBooleanExtra("xenon_new_chat", false)) {
+                intent.removeExtra("xenon_new_chat");
+                eval("window.__xenonNewChat && window.__xenonNewChat();");
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    @Override
+    protected void onDestroy() {
+        /* Stop any in-flight generation before tearing down native state. */
+        try { nativeCancelGeneration(); } catch (Throwable ignored) {}
+        Thread t = genThread;
+        if (t != null) {
+            try { t.join(2000); } catch (InterruptedException ignored) {}
+        }
+        try {
+            if (nativeLoaded) nativeShutdown();
+        } catch (Throwable ignored) {}
+        try {
+            if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
+        } catch (Throwable ignored) {}
+        super.onDestroy();
+    }
+
+    /* ============================================================ */
+    /* Crash dialog                                                 */
+    /* ============================================================ */
 
     private void showCrash(String where, Throwable t) {
         StringWriter sw = new StringWriter();
         t.printStackTrace(new PrintWriter(sw));
         String trace = sw.toString();
         Log.e(TAG, "CRASH " + where + ":\n" + trace);
+
+        /* Keep the dialog readable: first 20 lines only. */
+        String[] lines = trace.split("\n", 25);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(20, lines.length); i++) {
+            sb.append(lines[i]).append('\n');
+        }
+        if (lines.length > 20) sb.append("…\n");
+
         try {
             new AlertDialog.Builder(this)
                 .setTitle("Crash in " + where)
-                .setMessage(trace)
+                .setMessage(sb.toString())
                 .setPositiveButton("OK", null)
                 .show();
         } catch (Throwable ignored) {}
     }
 
-    @JavascriptInterface public void setCallbackId(long id) { currentCallbackId = id; }
-    @JavascriptInterface public int  loadModel(String path) { return nativeInit(path); }
-    @JavascriptInterface public void shutdown()             { nativeShutdown(); }
+    /* ============================================================ */
+    /* JS bridge plumbing                                           */
+    /* ============================================================ */
+
+    private void eval(String js) {
+        if (web == null) return;
+        ui.post(() -> {
+            try { web.evaluateJavascript(js, null); }
+            catch (Throwable ignored) {}
+        });
+    }
+
+    private void toastViaJs(String msg) {
+        eval("window.__xenonToast && window.__xenonToast("
+             + JSONObject.quote(msg) + ");");
+    }
+
+    /* ============================================================ */
+    /* Native wrappers                                              */
+    /* ============================================================ */
+
+    @JavascriptInterface
+    public int loadModel(String path) {
+        if (!nativeLoaded) return -1;
+        try {
+            return nativeInit(path);
+        } catch (Throwable t) {
+            Log.e(TAG, "loadModel failed", t);
+            return -4;
+        }
+    }
+
+    @JavascriptInterface
+    public void shutdown() {
+        if (!nativeLoaded) return;
+        try { nativeShutdown(); } catch (Throwable ignored) {}
+    }
+
+    @JavascriptInterface
+    public String statusString(int code) {
+        if (!nativeLoaded) return "native library not loaded";
+        try {
+            return nativeStatusString(code);
+        } catch (Throwable t) {
+            return "unknown error " + code;
+        }
+    }
+
+    @JavascriptInterface
+    public void cancelGeneration() {
+        if (!nativeLoaded) return;
+        try { nativeCancelGeneration(); } catch (Throwable ignored) {}
+    }
+
+    @JavascriptInterface
+    public void continueContext() {
+        if (!nativeLoaded) return;
+        try { nativeContinueContext(); } catch (Throwable ignored) {}
+    }
+
+    @JavascriptInterface
+    public void resetContext() {
+        if (!nativeLoaded) return;
+        try { nativeResetContext(); } catch (Throwable ignored) {}
+    }
+
+    /* ============================================================ */
+    /* Generation                                                   */
+    /* ============================================================ */
 
     @JavascriptInterface
     public void generateStream(final String prompt, final int maxTokens,
                                final float temperature, final float topP,
                                final int topK, final long callbackId) {
-        new Thread(() -> {
+        if (!nativeLoaded) {
+            deliverError(callbackId, "native library not loaded");
+            deliverDone(callbackId);
+            return;
+        }
+
+        /* Serialize generations — only one at a time. */
+        Thread prev = genThread;
+        if (prev != null && prev.isAlive()) {
+            deliverError(callbackId, "generation already in progress");
+            deliverDone(callbackId);
+            return;
+        }
+
+        Thread t = new Thread(() -> {
+            int rc = 0;
             try {
-                nativeGenerateStream(prompt, maxTokens, temperature, topP, topK,
+                rc = nativeGenerateStream(prompt, maxTokens, temperature, topP, topK,
                     piece -> deliverToken(callbackId, piece));
-            } catch (Throwable t) {
-                deliverError(callbackId, String.valueOf(t.getMessage()));
+            } catch (Throwable th) {
+                Log.e(TAG, "generateStream crashed", th);
+                deliverError(callbackId, String.valueOf(th.getMessage()));
+                rc = -4;
             } finally {
-                deliverDone(callbackId);
+                genThread = null;
             }
-        }, "xenon-gen").start();
+
+            if (rc == -6) {
+                /* cancelled — no error, just done */
+            } else if (rc != 0) {
+                String msg;
+                try { msg = nativeStatusString(rc); }
+                catch (Throwable ignored) { msg = "code " + rc; }
+                deliverError(callbackId, msg);
+            }
+            deliverDone(callbackId);
+        }, "xenon-gen");
+
+        genThread = t;
+        t.start();
     }
 
     private void deliverToken(long id, String piece) {
-        eval("window.__xenonToken && window.__xenonToken(" + id + "," + JSONObject.quote(piece) + ");");
+        eval("window.__xenonToken && window.__xenonToken("
+             + id + "," + JSONObject.quote(piece) + ");");
     }
     private void deliverError(long id, String msg) {
-        eval("window.__xenonError && window.__xenonError(" + id + "," + JSONObject.quote(msg == null ? "error" : msg) + ");");
+        eval("window.__xenonError && window.__xenonError("
+             + id + "," + JSONObject.quote(msg == null ? "error" : msg) + ");");
     }
     private void deliverDone(long id) {
         eval("window.__xenonDone && window.__xenonDone(" + id + ");");
     }
-    private void eval(String js) {
-        if (web == null) return;
-        ui.post(() -> { try { web.evaluateJavascript(js, null); } catch (Throwable ignored) {} });
-    }
+
+    /* ============================================================ */
+    /* Model list / selection                                       */
+    /* ============================================================ */
 
     @JavascriptInterface
     public String listModels() {
@@ -148,6 +383,10 @@ public class MainActivity extends AppCompatActivity {
     @JavascriptInterface public boolean deleteModel(String filename)  { return new File(getFilesDir(), filename).delete(); }
     @JavascriptInterface public String modelPath(String filename)     { return new File(getFilesDir(), filename).getAbsolutePath(); }
 
+    /* ============================================================ */
+    /* Settings                                                     */
+    /* ============================================================ */
+
     @JavascriptInterface
     public String getSettings() {
         try {
@@ -166,23 +405,32 @@ public class MainActivity extends AppCompatActivity {
         AppState.save(this, m, t, tp, tk, sys);
     }
 
+    /* ============================================================ */
+    /* Model download                                               */
+    /* ============================================================ */
+
     @JavascriptInterface
     public void downloadModel(String url, String filename, long dlId) {
-        new Thread(() -> downloadWorker(url, filename, dlId)).start();
+        new Thread(() -> downloadWorker(url, filename, dlId), "xenon-dl").start();
     }
 
     private void downloadWorker(String url, String filename, long dlId) {
+        File tmp = new File(getFilesDir(), filename + ".part");
+        File dst = new File(getFilesDir(), filename);
         try {
-            java.net.HttpURLConnection c =
-                (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
             c.setInstanceFollowRedirects(true);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            c.setRequestProperty("User-Agent", "XenonLabs/1.0 (Android)");
             c.connect();
-            if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+            if (c.getResponseCode() != 200) {
+                throw new Exception("HTTP " + c.getResponseCode());
+            }
             long total = c.getContentLengthLong(), done = 0;
-            File tmp = new File(getFilesDir(), filename + ".part");
             byte[] buf = new byte[1 << 16];
-            try (java.io.InputStream in = c.getInputStream();
-                 java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+            try (InputStream in = c.getInputStream();
+                 FileOutputStream out = new FileOutputStream(tmp)) {
                 int n; long last = 0;
                 while ((n = in.read(buf)) > 0) {
                     out.write(buf, 0, n); done += n;
@@ -194,9 +442,15 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-            tmp.renameTo(new File(getFilesDir(), filename));
+            if (!tmp.renameTo(dst)) {
+                throw new Exception("rename failed");
+            }
             notifyDownload(dlId, 100, done, total, true);
-        } catch (Exception e) { notifyDownloadError(dlId, e.getMessage()); }
+        } catch (Exception e) {
+            /* Clean up the partial file so it does not accumulate. */
+            try { if (tmp.exists()) tmp.delete(); } catch (Throwable ignored) {}
+            notifyDownloadError(dlId, e.getMessage());
+        }
     }
 
     private void notifyDownload(long id, int pct, long done, long total, boolean finished) {
@@ -208,92 +462,20 @@ public class MainActivity extends AppCompatActivity {
              + JSONObject.quote(msg == null ? "error" : msg) + ");");
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-
-        filePicker = registerForActivityResult(
-            new ActivityResultContracts.OpenDocument(),
-            uri -> {
-                importing = false;
-                if (uri == null) {
-                    eval("window.__xenonImportError && window.__xenonImportError('cancelled');");
-                    return;
-                }
-                new Thread(() -> importGguf(uri)).start();
-            });
-
-        try {
-            setContentView(R.layout.activity_main);
-
-            web = findViewById(R.id.web);
-            if (web == null) { showCrash("onCreate", new RuntimeException("R.id.web is null")); return; }
-
-            WebSettings s = web.getSettings();
-            s.setJavaScriptEnabled(true);
-            s.setDomStorageEnabled(true);
-            s.setAllowFileAccess(true);
-            s.setAllowContentAccess(true);
-
-            web.setWebViewClient(new WebViewClient());
-            web.setWebChromeClient(new WebChromeClient() {
-                @Override public boolean onConsoleMessage(ConsoleMessage m) {
-                    Log.d("XenonWeb", m.message());
-                    return true;
-                }
-            });
-
-            web.addJavascriptInterface(new Bridge(), "Xenon");
-            web.loadUrl("file:///android_asset/index.html");
-
-            initTts();
-
-            Log.i(TAG, "onCreate complete; nativeLoaded=" + nativeLoaded);
-        } catch (Throwable t) {
-            showCrash("onCreate", t);
-        }
-    }
-
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        setIntent(intent);
-
-        /* The WebView is already loaded. Don't re-create it.
-         * If the widget asked for a new chat, tell the JS side. */
-        try {
-            if (intent != null && intent.getBooleanExtra("xenon_new_chat", false)) {
-                intent.removeExtra("xenon_new_chat");
-                eval("window.__xenonNewChat && window.__xenonNewChat();");
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    @Override
-    protected void onDestroy() {
-        try { if (nativeLoaded) nativeShutdown(); } catch (Throwable ignored) {}
-        try {
-            if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
-        } catch (Throwable ignored) {}
-        super.onDestroy();
-    }
-
-    /* ============================================================
-       Import a .gguf file from the device's file system
-       ============================================================ */
+    /* ============================================================ */
+    /* GGUF import from file picker                                 */
+    /* ============================================================ */
 
     @JavascriptInterface
     public void importModel() {
         importing = true;
         ui.post(() -> {
             try {
-                /* any MIME — Android shows "Browse" fallback for gguf */
                 filePicker.launch(new String[]{"*/*"});
             } catch (Throwable t) {
                 importing = false;
-                eval("window.__xenonImportError && window.__xenonImportError('" +
-                     JSONObject.quote(String.valueOf(t.getMessage())) + "');");
+                eval("window.__xenonImportError && window.__xenonImportError(" +
+                     JSONObject.quote(String.valueOf(t.getMessage())) + ");");
             }
         });
     }
@@ -302,6 +484,7 @@ public class MainActivity extends AppCompatActivity {
     public boolean isImporting() { return importing; }
 
     private void importGguf(Uri uri) {
+        File dst = null;
         try {
             String display = queryDisplayName(uri);
             if (display == null || !display.toLowerCase().endsWith(".gguf")) {
@@ -309,9 +492,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            File dst = new File(getFilesDir(), display);
-
-            /* if same name exists, add suffix */
+            dst = new File(getFilesDir(), display);
             if (dst.exists()) {
                 String base = display.substring(0, display.length() - 5);
                 int i = 1;
@@ -323,8 +504,8 @@ public class MainActivity extends AppCompatActivity {
 
             long total = querySize(uri);
             long done = 0;
-            try (java.io.InputStream in = getContentResolver().openInputStream(uri);
-                 java.io.FileOutputStream out = new java.io.FileOutputStream(dst)) {
+            try (InputStream in = getContentResolver().openInputStream(uri);
+                 FileOutputStream out = new FileOutputStream(dst)) {
                 if (in == null) throw new Exception("cannot open stream");
                 byte[] buf = new byte[1 << 16];
                 int n; long last = 0;
@@ -346,10 +527,12 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
-            /* register as a custom model in JS land, then activate it */
             eval("window.__xenonImportDone && window.__xenonImportDone(" +
                  JSONObject.quote(dst.getName()) + ");");
         } catch (Throwable t) {
+            /* Clean up partial import. */
+            try { if (dst != null && dst.exists() && dst.length() == 0) dst.delete(); }
+            catch (Throwable ignored) {}
             eval("window.__xenonImportError && window.__xenonImportError(" +
                  JSONObject.quote(String.valueOf(t.getMessage())) + ");");
         }
@@ -378,9 +561,9 @@ public class MainActivity extends AppCompatActivity {
         return 0;
     }
 
-    /* ============================================================
-       Text-to-speech
-       ============================================================ */
+    /* ============================================================ */
+    /* TTS                                                          */
+    /* ============================================================ */
 
     private void initTts() {
         if (tts != null) return;
@@ -388,7 +571,6 @@ public class MainActivity extends AppCompatActivity {
             if (status == TextToSpeech.SUCCESS) {
                 try {
                     tts.setLanguage(Locale.getDefault());
-                    /* slow down slightly — LLM output sounds fast at 1.0 */
                     tts.setSpeechRate(0.95f);
                     ttsReady = true;
                 } catch (Throwable t) {
@@ -413,7 +595,6 @@ public class MainActivity extends AppCompatActivity {
             eval("window.__xenonTtsState && window.__xenonTtsState('unavailable');");
             return;
         }
-        /* clean up markdown that would sound weird */
         String clean = text
             .replaceAll("```[\\s\\S]*?```", " code block ")
             .replaceAll("`([^`]*)`", "$1")
@@ -441,9 +622,18 @@ public class MainActivity extends AppCompatActivity {
         eval("window.__xenonTtsState && window.__xenonTtsState('idle');");
     }
 
-    /* ============================================================
-       Notifications
-       ============================================================ */
+    /* ============================================================ */
+    /* Notifications                                                */
+    /* ============================================================ */
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) return;
+        ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                REQ_POST_NOTIFS);
+    }
 
     private void ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -484,15 +674,20 @@ public class MainActivity extends AppCompatActivity {
             .setContentIntent(openAppIntent());
         try {
             NotificationManagerCompat.from(this).notify(NOTIF_ID, b.build());
-        } catch (SecurityException ignored) { /* permission not granted */ }
+        } catch (SecurityException ignored) {
+            /* permission not granted */
+        }
     }
 
     @JavascriptInterface
     public void hideGenerationNotification() {
-        try {
-            NotificationManagerCompat.from(this).cancel(NOTIF_ID);
-        } catch (Throwable ignored) {}
+        try { NotificationManagerCompat.from(this).cancel(NOTIF_ID); }
+        catch (Throwable ignored) {}
     }
+
+    /* ============================================================ */
+    /* Widget reply                                                 */
+    /* ============================================================ */
 
     @JavascriptInterface
     public void saveWidgetReply(String text) {
@@ -503,24 +698,9 @@ public class MainActivity extends AppCompatActivity {
         try { XenonWidget.refresh(this); } catch (Throwable ignored) {}
     }
 
-    @JavascriptInterface
-    public void cancelGeneration() {
-        try { nativeCancelGeneration(); } catch (Throwable ignored) {}
-    }
-
-    @JavascriptInterface
-    public void continueContext() {
-        try { nativeContinueContext(); } catch (Throwable ignored) {}
-    }
-
-    @JavascriptInterface
-    public void resetContext() {
-        try { nativeResetContext(); } catch (Throwable ignored) {}
-    }
-
-    /* ============================================================
-       In-app update: download APK → prompt install
-       ============================================================ */
+    /* ============================================================ */
+    /* In-app APK update                                            */
+    /* ============================================================ */
 
     @JavascriptInterface
     public void downloadAndInstallApk(String url, String versionTag) {
@@ -528,12 +708,12 @@ public class MainActivity extends AppCompatActivity {
             eval("window.__xenonApkError && window.__xenonApkError('no url');");
             return;
         }
-        new Thread(() -> doDownloadApk(url, versionTag)).start();
+        new Thread(() -> doDownloadApk(url, versionTag), "xenon-apk").start();
     }
 
     private void doDownloadApk(String url, String versionTag) {
+        File out = null;
         try {
-            /* Prepare an updates directory under filesDir */
             File dir = new File(getFilesDir(), "updates");
             if (!dir.exists() && !dir.mkdirs()) {
                 eval("window.__xenonApkError && window.__xenonApkError('mkdir failed');");
@@ -541,12 +721,13 @@ public class MainActivity extends AppCompatActivity {
             }
             String safeTag = (versionTag == null || versionTag.isEmpty())
                 ? "latest" : versionTag.replaceAll("[^a-zA-Z0-9._-]", "_");
-            File out = new File(dir, "xenonlabs-" + safeTag + ".apk");
+            out = new File(dir, "xenonlabs-" + safeTag + ".apk");
 
-            /* Stream download */
-            java.net.HttpURLConnection c =
-                (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
             c.setInstanceFollowRedirects(true);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(60000);
+            c.setRequestProperty("User-Agent", "XenonLabs/1.0 (Android)");
             c.connect();
             if (c.getResponseCode() != 200) {
                 eval("window.__xenonApkError && window.__xenonApkError('HTTP " + c.getResponseCode() + "');");
@@ -555,8 +736,8 @@ public class MainActivity extends AppCompatActivity {
             long total = c.getContentLengthLong();
             long done = 0;
             byte[] buf = new byte[1 << 16];
-            try (java.io.InputStream in = c.getInputStream();
-                 java.io.FileOutputStream os = new java.io.FileOutputStream(out)) {
+            try (InputStream in = c.getInputStream();
+                 FileOutputStream os = new FileOutputStream(out)) {
                 int n; long last = 0;
                 while ((n = in.read(buf)) > 0) {
                     os.write(buf, 0, n);
@@ -578,7 +759,6 @@ public class MainActivity extends AppCompatActivity {
 
             eval("window.__xenonApkProgress && window.__xenonApkProgress('Preparing install…');");
 
-            /* Hand the APK to the system installer */
             Uri apkUri = FileProvider.getUriForFile(
                 this, getPackageName() + ".fileprovider", out);
 
@@ -591,38 +771,44 @@ public class MainActivity extends AppCompatActivity {
 
             eval("window.__xenonApkDone && window.__xenonApkDone();");
         } catch (Throwable t) {
+            try { if (out != null && out.exists()) out.delete(); }
+            catch (Throwable ignored) {}
             eval("window.__xenonApkError && window.__xenonApkError("
                  + JSONObject.quote(String.valueOf(t.getMessage())) + ");");
         }
     }
 
+    /* ============================================================ */
+    /* JS bridge                                                    */
+    /* ============================================================ */
+
     public class Bridge {
-        @JavascriptInterface public int    loadModel(String p)                        { return MainActivity.this.loadModel(p); }
-        @JavascriptInterface public void   shutdown()                                 { MainActivity.this.shutdown(); }
-        @JavascriptInterface public void   setCallbackId(long id)                     { MainActivity.this.setCallbackId(id); }
-        @JavascriptInterface public void   generateStream(String p, int m, float t, float tp, int tk, long id) {
+        @JavascriptInterface public int     loadModel(String p)                        { return MainActivity.this.loadModel(p); }
+        @JavascriptInterface public void    shutdown()                                 { MainActivity.this.shutdown(); }
+        @JavascriptInterface public String  statusString(int code)                     { return MainActivity.this.statusString(code); }
+        @JavascriptInterface public void    generateStream(String p, int m, float t, float tp, int tk, long id) {
             MainActivity.this.generateStream(p, m, t, tp, tk, id);
         }
-        @JavascriptInterface public String listModels()                                { return MainActivity.this.listModels(); }
-        @JavascriptInterface public void   setActiveModel(String f)                    { MainActivity.this.setActiveModel(f); }
-        @JavascriptInterface public boolean deleteModel(String f)                      { return MainActivity.this.deleteModel(f); }
-        @JavascriptInterface public String getSettings()                               { return MainActivity.this.getSettings(); }
-        @JavascriptInterface public void   saveSettings(int m, float t, float tp, int tk, String s) {
+        @JavascriptInterface public String  listModels()                                { return MainActivity.this.listModels(); }
+        @JavascriptInterface public void    setActiveModel(String f)                    { MainActivity.this.setActiveModel(f); }
+        @JavascriptInterface public boolean deleteModel(String f)                       { return MainActivity.this.deleteModel(f); }
+        @JavascriptInterface public String  getSettings()                               { return MainActivity.this.getSettings(); }
+        @JavascriptInterface public void    saveSettings(int m, float t, float tp, int tk, String s) {
             MainActivity.this.saveSettings(m, t, tp, tk, s);
         }
-        @JavascriptInterface public String modelPath(String f)                         { return MainActivity.this.modelPath(f); }
-        @JavascriptInterface public void   downloadModel(String u, String f, long id)  { MainActivity.this.downloadModel(u, f, id); }
-        @JavascriptInterface public void   importModel()                              { MainActivity.this.importModel(); }
-        @JavascriptInterface public boolean isImporting()                             { return MainActivity.this.isImporting(); }
-    
-        @JavascriptInterface public void   speak(String text)                         { MainActivity.this.speak(text); }
-        @JavascriptInterface public void   stopSpeaking()                             { MainActivity.this.stopSpeaking(); }
-        @JavascriptInterface public void   showGenerationNotification(String text)    { MainActivity.this.showGenerationNotification(text); }
-        @JavascriptInterface public void   hideGenerationNotification()              { MainActivity.this.hideGenerationNotification(); }
-        @JavascriptInterface public void   cancelGeneration()                        { MainActivity.this.cancelGeneration(); }
-        @JavascriptInterface public void   continueContext()                         { MainActivity.this.continueContext(); }
-        @JavascriptInterface public void   resetContext()                            { MainActivity.this.resetContext(); }
-        @JavascriptInterface public void   downloadAndInstallApk(String u, String v)  { MainActivity.this.downloadAndInstallApk(u, v); }
-        @JavascriptInterface public void   saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
+        @JavascriptInterface public String  modelPath(String f)                         { return MainActivity.this.modelPath(f); }
+        @JavascriptInterface public void    downloadModel(String u, String f, long id)  { MainActivity.this.downloadModel(u, f, id); }
+        @JavascriptInterface public void    importModel()                               { MainActivity.this.importModel(); }
+        @JavascriptInterface public boolean isImporting()                               { return MainActivity.this.isImporting(); }
+
+        @JavascriptInterface public void    speak(String text)                          { MainActivity.this.speak(text); }
+        @JavascriptInterface public void    stopSpeaking()                              { MainActivity.this.stopSpeaking(); }
+        @JavascriptInterface public void    showGenerationNotification(String text)     { MainActivity.this.showGenerationNotification(text); }
+        @JavascriptInterface public void    hideGenerationNotification()                { MainActivity.this.hideGenerationNotification(); }
+        @JavascriptInterface public void    cancelGeneration()                          { MainActivity.this.cancelGeneration(); }
+        @JavascriptInterface public void    continueContext()                           { MainActivity.this.continueContext(); }
+        @JavascriptInterface public void    resetContext()                              { MainActivity.this.resetContext(); }
+        @JavascriptInterface public void    downloadAndInstallApk(String u, String v)   { MainActivity.this.downloadAndInstallApk(u, v); }
+        @JavascriptInterface public void    saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
     }
 }

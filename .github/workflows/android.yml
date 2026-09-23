@@ -17,10 +17,6 @@ on:
       - 'CMakeLists.txt'
   workflow_dispatch:
 
-# ---------------------------------------------------------------------
-# Pinned llama.cpp revision. If you bump this, update apk-smoke.yml too.
-# Find the latest at https://github.com/ggml-org/llama.cpp/commits/master
-# ---------------------------------------------------------------------
 env:
   LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp
   LLAMA_CPP_SHA: 6e60f35608ec6918b44a9839c0c433687165f086
@@ -100,7 +96,6 @@ jobs:
           echo "--- .so files produced by llama.cpp ---"
           find llama.cpp/build-android -name '*.so' -type f | sort
 
-          # These four MUST exist. Fail loudly if any is missing.
           for f in libllama.so libggml.so libggml-base.so libggml-cpu.so; do
             src=$(find llama.cpp/build-android -name "$f" -type f | head -1)
             if [ -z "$src" ]; then
@@ -119,25 +114,26 @@ jobs:
           DEST=android/app/src/main/jni/llama_include
           mkdir -p "$DEST"
 
-          # llama.h
           cp llama.cpp/include/llama.h "$DEST/llama.h"
 
-          # ggml headers — copy explicitly, no find-glob.
-          cp llama.cpp/ggml/include/ggml.h       "$DEST/ggml.h"
-          cp llama.cpp/ggml/include/ggml-alloc.h "$DEST/ggml-alloc.h"  2>/dev/null || true
-          cp llama.cpp/ggml/include/ggml-backend.h "$DEST/ggml-backend.h" 2>/dev/null || true
-          cp llama.cpp/ggml/include/ggml-cpu.h   "$DEST/ggml-cpu.h"    2>/dev/null || true
-          cp llama.cpp/ggml/include/ggml-metal.h "$DEST/ggml-metal.h"  2>/dev/null || true
-          cp llama.cpp/ggml/include/ggml-cuda.h  "$DEST/ggml-cuda.h"   2>/dev/null || true
-          cp llama.cpp/ggml/include/ggml-vulkan.h "$DEST/ggml-vulkan.h" 2>/dev/null || true
-          cp llama.cpp/ggml/include/gguf.h       "$DEST/gguf.h"         2>/dev/null || true
+          # Every ggml*.h + gguf.h.
+          cp llama.cpp/ggml/include/ggml*.h "$DEST/" 2>/dev/null || true
+          cp llama.cpp/ggml/include/gguf.h  "$DEST/" 2>/dev/null || true
 
-          # Sanity: at least llama.h and ggml.h must be there.
-          test -s "$DEST/llama.h" || { echo "::error::missing llama.h"; exit 1; }
-          test -s "$DEST/ggml.h"  || { echo "::error::missing ggml.h";  exit 1; }
+          # Stragglers that might live elsewhere.
+          for h in ggml-opt.h ggml-alloc.h ggml-backend.h ggml-cpu.h \
+                   ggml-metal.h ggml-cuda.h ggml-vulkan.h ggml-opencl.h; do
+            [ -f "$DEST/$h" ] && continue
+            find llama.cpp -name "$h" -type f -not -path '*/build-*' \
+              -exec cp {} "$DEST/" \; 2>/dev/null || true
+          done
+
+          test -s "$DEST/llama.h"    || { echo "::error::missing llama.h";    exit 1; }
+          test -s "$DEST/ggml.h"     || { echo "::error::missing ggml.h";     exit 1; }
+          test -s "$DEST/ggml-opt.h" || { echo "::error::missing ggml-opt.h"; exit 1; }
 
           echo "--- headers copied ---"
-          ls "$DEST/" | head -20
+          ls "$DEST/" | sort
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3

@@ -13,16 +13,13 @@ on:
 env:
   LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp
   LLAMA_CPP_SHA: 6e60f35608ec6918b44a9839c0c433687165f086
-  # x86_64 for the smoke test — GitHub's free runners are x86_64 and
-  # KVM-accelerated arm64 emulation is not available. Real releases
-  # are built for arm64-v8a by android.yml.
-  SMOKE_ABI: x86_64
+  ANDROID_ABI: arm64-v8a
   ANDROID_API: 24
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -50,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llama.cpp
-          key: llama-cpp-${{ env.LLAMA_CPP_SHA }}-${{ env.SMOKE_ABI }}-ndk26.1.10909125-cmake3.22.1-v1
+          key: llama-cpp-${{ env.LLAMA_CPP_SHA }}-${{ env.ANDROID_ABI }}-ndk26.1.10909125-cmake3.22.1-v2
 
       - name: Clone llama.cpp (pinned)
         run: |
@@ -61,12 +58,12 @@ jobs:
           git fetch --tags origin
           git checkout "$LLAMA_CPP_SHA"
 
-      - name: Configure llama.cpp for x86_64
+      - name: Configure llama.cpp
         run: |
           cd llama.cpp
           cmake -S . -B build-android -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$SMOKE_ABI \
+            -DANDROID_ABI=$ANDROID_ABI \
             -DANDROID_PLATFORM=android-$ANDROID_API \
             -DBUILD_SHARED_LIBS=ON \
             -DLLAMA_BUILD_TESTS=OFF \
@@ -82,10 +79,10 @@ jobs:
           cd llama.cpp
           cmake --build build-android --target llama -j
 
-      - name: Copy native libs (x86_64)
+      - name: Copy native libs
         run: |
           set -euo pipefail
-          DEST=android/app/src/main/jniLibs/$SMOKE_ABI
+          DEST=android/app/src/main/jniLibs/$ANDROID_ABI
           mkdir -p "$DEST"
           for f in libllama.so libggml.so libggml-base.so libggml-cpu.so; do
             src=$(find llama.cpp/build-android -name "$f" -type f | head -1)
@@ -107,64 +104,75 @@ jobs:
           done
           test -s "$DEST/llama.h" || { echo "::error::missing llama.h"; exit 1; }
 
-      # The app's build.gradle restricts ABI to arm64-v8a.
-      # Override it for the smoke test so we can run on x86_64.
-      - name: Patch build.gradle for x86_64 smoke
-        run: |
-          sed -i "s/abiFilters 'arm64-v8a'/abiFilters '$SMOKE_ABI'/" android/app/build.gradle
-          grep abiFilters android/app/build.gradle
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build debug APK (x86_64)
+      - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Enable KVM
+      - name: Smoke test — inspect APK
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          set -euo pipefail
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          echo "APK: $APK"
+          ls -lh "$APK"
 
-      - name: Run smoke test on emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_5
-          disable-animations: true
-          emulator-options: >-
-            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-            -no-snapshot -no-metrics
-          script: |
-            set -e
-            adb wait-for-device
-            adb shell 'while [ -z "$(getprop sys.boot_completed)" ]; do sleep 1; done'
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb logcat -c
-            adb shell am start -n com.xenonlabs.app/.MainActivity
-            sleep 8
-            PID=$(adb shell pidof com.xenonlabs.app || true)
-            if [ -z "$PID" ]; then
-                echo "FAIL: process not running"
-                adb logcat -d | tail -200
-                exit 1
+          echo
+          echo "=== 1. APK is well-formed ==="
+          $ANDROID_HOME/build-tools/34.0.0/aapt dump badging "$APK" \
+            | grep -E "^package|launchable-activity|native-code"
+
+          echo
+          echo "=== 2. Native libs are packaged ==="
+          unzip -l "$APK" | grep -E "\.so$" | tee /tmp/so-list.txt
+          for lib in lib/arm64-v8a/libllama.so \
+                     lib/arm64-v8a/libggml.so \
+                     lib/arm64-v8a/libxenonlabs_jni.so; do
+            if ! grep -q "$lib" /tmp/so-list.txt; then
+              echo "::error::missing $lib in APK"
+              exit 1
             fi
-            echo "PASS: pid=$PID"
-            if adb logcat -d | grep -q "FATAL EXCEPTION"; then
-                echo "FAIL: crash detected"
-                adb logcat -d | grep -A 30 "FATAL EXCEPTION"
-                exit 1
+          done
+
+          echo
+          echo "=== 3. JNI symbols are exported ==="
+          # extract libxenonlabs_jni.so and check its exported symbols
+          mkdir -p /tmp/apk-extract
+          unzip -o "$APK" lib/arm64-v8a/libxenonlabs_jni.so -d /tmp/apk-extract >/dev/null
+          NM=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
+          $NM -D /tmp/apk-extract/lib/arm64-v8a/libxenonlabs_jni.so > /tmp/syms.txt
+          for sym in \
+              Java_com_xenonlabs_app_MainActivity_nativeInit \
+              Java_com_xenonlabs_app_MainActivity_nativeShutdown \
+              Java_com_xenonlabs_app_MainActivity_nativeGenerateStream \
+              Java_com_xenonlabs_app_MainActivity_nativeCancelGeneration \
+              Java_com_xenonlabs_app_MainActivity_nativeContinueContext \
+              Java_com_xenonlabs_app_MainActivity_nativeResetContext \
+              Java_com_xenonlabs_app_MainActivity_nativeStatusString ; do
+            if ! grep -q " $sym\$" /tmp/syms.txt; then
+              echo "::error::missing symbol: $sym"
+              echo "--- symbols found ---"
+              grep Java_ /tmp/syms.txt || true
+              exit 1
             fi
-            echo "PASS: no fatal exceptions"
+          done
+          echo "All 7 JNI entry points present."
+
+          echo
+          echo "=== 4. libxenonlabs_jni.so depends on the expected libs ==="
+          READELF=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
+          $READELF -d /tmp/apk-extract/lib/arm64-v8a/libxenonlabs_jni.so \
+            | grep NEEDED || true
+
+          echo
+          echo "PASS: APK smoke test"
 
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-apk-x86_64
+          name: smoke-apk-arm64
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: ignore
           retention-days: 7

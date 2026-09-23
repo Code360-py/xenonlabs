@@ -404,7 +404,9 @@
 
         let acc = '';
         streams.set(TITLE_CB_ID, {
+            _gotToken: false,
             onToken: piece => {
+                streams.get(TITLE_CB_ID)._gotToken = true;
                 acc += piece;
                 /* stop early on newline or 60 chars */
                 if (acc.length > 60 || acc.indexOf('\n') !== -1) {
@@ -426,14 +428,37 @@
                     }
                 }
             },
-            onError: () => { /* silent — keep the truncated title */ }
+            onError: (msg) => {
+                /* Not silent anymore — we want to see why it failed. */
+                console.warn('[autotitle] failed:', msg);
+                streams.delete(TITLE_CB_ID);
+            }
         });
 
-        try {
-            window.Xenon.generateStream(prompt, 24, 0.3, 0.9, 20, TITLE_CB_ID);
-        } catch (_) {
-            streams.delete(TITLE_CB_ID);
+        let attempt = 0;
+        function tryLaunch() {
+            attempt++;
+            try {
+                window.Xenon.generateStream(prompt, 24, 0.3, 0.9, 20, TITLE_CB_ID);
+            } catch (e) {
+                streams.delete(TITLE_CB_ID);
+                if (attempt < 3) setTimeout(tryLaunch, 1200);
+                return;
+            }
         }
+        /* First attempt after a short beat. */
+        setTimeout(tryLaunch, 300);
+
+        /* If no token arrives within 3s, retry once (the native
+         * generator may have still been busy). */
+        setTimeout(() => {
+            const s = streams.get(TITLE_CB_ID);
+            if (s && s._gotToken) return;
+            if (attempt < 3) {
+                streams.delete(TITLE_CB_ID);
+                tryLaunch();
+            }
+        }, 3000);
     }
 
 
@@ -813,11 +838,13 @@
                     tps: tps
                 });
 
-                /* Auto-title on the first exchange */
+                /* Auto-title on the first exchange. Delay allows the
+                 * native genThread to fully exit before we start a new
+                 * generation (Java rejects concurrent generations). */
                 try {
                     const c2 = currentConversation();
                     const assistantCount = c2.messages.filter(m => m.role === 'assistant').length;
-                    if (assistantCount === 1) setTimeout(() => maybeAutoTitle(c2), 400);
+                    if (assistantCount === 1) setTimeout(() => maybeAutoTitle(c2), 1500);
                 } catch (_) {}
                 persistActive();
                 generating = false;

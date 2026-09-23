@@ -5,30 +5,85 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!--
-      Adaptive icon safe zone: the central 72×72 area (18..90 in both axes).
-      Everything here lives well inside that.
-    -->
-    <group android:translateX="27" android:translateY="27">
-        <!-- Letter X built from two thick rounded strokes.
-             Total width/height = 54, giving 9dp margin inside safe zone. -->
-        <path
-            android:fillColor="#ffffff"
-            android:pathData="M5,5 L49,49 L49,49 L49,49 Z"
-            android:strokeWidth="0" />
+    <!-- ============ EARS (drawn first, behind the head) ============ -->
 
-        <!-- Top-left to bottom-right diagonal -->
-        <path
-            android:pathData="M8,4 L50,50"
-            android:strokeColor="#ffffff"
-            android:strokeWidth="10"
-            android:strokeLineCap="round" />
+    <!-- Left ear: triangle from (32,42) up to (26,20) back down to (48,36) -->
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M32,44 L26,20 L48,36 Z" />
 
-        <!-- Top-right to bottom-left diagonal -->
-        <path
-            android:pathData="M50,4 L8,50"
-            android:strokeColor="#ffffff"
-            android:strokeWidth="10"
-            android:strokeLineCap="round" />
-    </group>
+    <!-- Right ear: mirrored -->
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M76,44 L82,20 L60,36 Z" />
+
+    <!-- ============ HEAD ============ -->
+    <!-- Circle, center (54,58), radius 27 — a bit wider than tall -->
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M54,31
+                          a27,27 0 1,0 0.001,0
+                          z" />
+
+    <!-- ============ EYES (dark, on the white head) ============ -->
+    <!-- Left eye -->
+    <path
+        android:fillColor="#0e1116"
+        android:pathData="M45,52
+                          a3.2,3.2 0 1,0 0.001,0
+                          z" />
+    <!-- Right eye -->
+    <path
+        android:fillColor="#0e1116"
+        android:pathData="M63,52
+                          a3.2,3.2 0 1,0 0.001,0
+                          z" />
+
+    <!-- ============ NOSE ============ -->
+    <!-- Small downward-pointing triangle at (54,62) -->
+    <path
+        android:fillColor="#0e1116"
+        android:pathData="M51,61 L57,61 L54,65 Z" />
+
+    <!-- ============ MOUTH ============ -->
+    <!-- Two short curves below the nose, in the style of a cat mouth -->
+    <path
+        android:pathData="M54,65 Q50,70 46,67"
+        android:strokeColor="#0e1116"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,65 Q58,70 62,67"
+        android:strokeColor="#0e1116"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+
+    <!-- ============ WHISKERS ============ -->
+    <!-- Left side -->
+    <path
+        android:pathData="M40,60 L28,58"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.85" />
+    <path
+        android:pathData="M40,64 L28,66"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.85" />
+
+    <!-- Right side -->
+    <path
+        android:pathData="M68,60 L80,58"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.85" />
+    <path
+        android:pathData="M68,64 L80,66"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.85" />
 </vector>

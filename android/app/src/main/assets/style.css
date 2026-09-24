@@ -1686,3 +1686,33 @@ body[data-accent="graphite"] { --accent: #6b7280; --accent-2: #4b5563; }
     flex-shrink: 0;
 }
 .xl-toast.undo button:active { background: rgba(77,107,254,.14); }
+
+/* ============================================================
+   Mic button (voice input)
+   ============================================================ */
+
+.xl-mic-btn {
+    width: 34px; height: 34px;
+    flex-shrink: 0;
+    border: none; border-radius: 10px;
+    background: transparent;
+    color: var(--fg-dim);
+    display: grid; place-items: center;
+    cursor: pointer; font-size: 14px;
+    transition: background .15s, color .15s, transform .12s;
+}
+.xl-mic-btn:active { background: rgba(255,255,255,.06); color: var(--fg); }
+
+.xl-mic-btn.listening {
+    background: rgba(239,68,68,.16);
+    color: var(--red, #ef4444);
+    animation: micPulse 1.4s ease-in-out infinite;
+}
+.xl-mic-btn.processing {
+    background: rgba(77,107,254,.14);
+    color: var(--accent);
+}
+@keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
+    50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}

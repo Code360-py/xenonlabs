@@ -15,6 +15,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.speech.tts.TextToSpeech;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
@@ -88,7 +91,11 @@ public class MainActivity extends AppCompatActivity {
     private WebView web;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
-    private TextToSpeech tts;
+    private SpeechRecognizer recognizer;
+    private volatile boolean isListening = false;
+    private static final int REQ_RECORD_AUDIO = 2002;
+
+        private TextToSpeech tts;
     private volatile boolean ttsReady = false;
 
     private ActivityResultLauncher<String[]> filePicker;
@@ -985,6 +992,126 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /* ============================================================ */
+    /* Voice input — matches the JS API in app.js                   */
+    /* ============================================================ */
+
+    @JavascriptInterface
+    public void startVoiceInput() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            eval("window.__xenonVoiceError && window.__xenonVoiceError('Speech recognition not available');");
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            eval("window.__xenonVoiceState && window.__xenonVoiceState('permission');");
+            ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.RECORD_AUDIO},
+                REQ_RECORD_AUDIO);
+            return;
+        }
+        beginListening();
+    }
+
+    @JavascriptInterface
+    public void stopVoiceInput() {
+        if (recognizer != null && isListening) {
+            try { recognizer.stopListening(); } catch (Throwable ignored) {}
+        }
+        isListening = false;
+        eval("window.__xenonVoiceState && window.__xenonVoiceState('idle');");
+    }
+
+    private void beginListening() {
+        ui.post(() -> {
+            try {
+                if (recognizer == null) {
+                    recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+                    recognizer.setRecognitionListener(new RecognitionListener() {
+                        @Override public void onReadyForSpeech(android.os.Bundle p) {
+                            eval("window.__xenonVoiceState && window.__xenonVoiceState('listening');");
+                        }
+                        @Override public void onBeginningOfSpeech() {}
+                        @Override public void onRmsChanged(float rms) {}
+                        @Override public void onBufferReceived(byte[] b) {}
+                        @Override public void onEndOfSpeech() {
+                            eval("window.__xenonVoiceState && window.__xenonVoiceState('processing');");
+                        }
+                        @Override public void onError(int error) {
+                            isListening = false;
+                            String msg = speechErrorMessage(error);
+                            eval("window.__xenonVoiceError && window.__xenonVoiceError("
+                                 + JSONObject.quote(msg) + ");");
+                        }
+                        @Override public void onResults(android.os.Bundle results) {
+                            isListening = false;
+                            java.util.ArrayList<String> list =
+                                results != null
+                                    ? results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                                    : null;
+                            String text = (list != null && !list.isEmpty()) ? list.get(0) : "";
+                            eval("window.__xenonVoiceText && window.__xenonVoiceText("
+                                 + JSONObject.quote(text) + ");");
+                        }
+                        @Override public void onPartialResults(android.os.Bundle partial) {
+                            java.util.ArrayList<String> list =
+                                partial != null
+                                    ? partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                                    : null;
+                            if (list != null && !list.isEmpty()) {
+                                eval("window.__xenonVoicePartial && window.__xenonVoicePartial("
+                                     + JSONObject.quote(list.get(0)) + ");");
+                            }
+                        }
+                        @Override public void onEvent(int type, android.os.Bundle params) {}
+                    });
+                }
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE,
+                    java.util.Locale.getDefault().toLanguageTag());
+                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+
+                isListening = true;
+                recognizer.startListening(intent);
+            } catch (Throwable t) {
+                Log.e(TAG, "startVoiceInput failed", t);
+                isListening = false;
+                eval("window.__xenonVoiceError && window.__xenonVoiceError("
+                     + JSONObject.quote(String.valueOf(t.getMessage())) + ");");
+            }
+        });
+    }
+
+    private static String speechErrorMessage(int code) {
+        switch (code) {
+            case SpeechRecognizer.ERROR_AUDIO: return "audio error";
+            case SpeechRecognizer.ERROR_CLIENT: return "client error";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "permission";
+            case SpeechRecognizer.ERROR_NETWORK: return "network error";
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "network timeout";
+            case SpeechRecognizer.ERROR_NO_MATCH: return "no match";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "busy";
+            case SpeechRecognizer.ERROR_SERVER: return "server error";
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "no speech";
+            default: return "voice error " + code;
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_RECORD_AUDIO) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                beginListening();
+            } else {
+                eval("window.__xenonVoiceError && window.__xenonVoiceError('permission denied');");
+            }
+        }
+    }
+
     public class Bridge {
         @JavascriptInterface public int     loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void    shutdown()                                 { MainActivity.this.shutdown(); }
@@ -1014,6 +1141,8 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void    downloadAndInstallApk(String u, String v)   { MainActivity.this.downloadAndInstallApk(u, v); }
         @JavascriptInterface public void    saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
         @JavascriptInterface public void    nativeToast(String msg)                  { MainActivity.this.nativeToast(msg); }
+        @JavascriptInterface public void    startVoiceInput()                       { MainActivity.this.startVoiceInput(); }
+        @JavascriptInterface public void    stopVoiceInput()                        { MainActivity.this.stopVoiceInput(); }
         @JavascriptInterface public void   startLocalServer()                      { MainActivity.this.startLocalServer(); }
         @JavascriptInterface public void   stopLocalServer()                       { MainActivity.this.stopLocalServer(); }
         @JavascriptInterface public int    getServerPort()                         { return MainActivity.this.getServerPort(); }

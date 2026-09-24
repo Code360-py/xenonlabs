@@ -39,28 +39,15 @@
     let toastTimer = null;
     let toastHideTimer = null;
     function toast(msg, icon) {
-        /* Wipe any existing toast so back-to-back calls don't stack */
-        let el = document.getElementById('xlToast');
-        if (el) el.remove();
-
-        el = document.createElement('div');
-        el.id = 'xlToast';
-        el.className = 'xl-toast';
-        el.innerHTML = '<i class="' + (icon || 'fa-solid fa-circle-check') + '"></i>' +
-                       '<span>' + escapeHtml(msg) + '</span>';
-        document.body.appendChild(el);
-
-        /* force layout so the .show transition runs */
-        void el.offsetWidth;
-        requestAnimationFrame(() => el.classList.add('show'));
-
-        clearTimeout(toastTimer);
-        clearTimeout(toastHideTimer);
-
-        toastTimer = setTimeout(() => {
-            el.classList.remove('show');
-            toastHideTimer = setTimeout(() => { el.remove(); }, 220);
-        }, 1800);
+        /* Route every toast to the native Android toast. */
+        try {
+            if (window.Xenon && window.Xenon.nativeToast) {
+                window.Xenon.nativeToast(String(msg || ''));
+                return;
+            }
+        } catch (_) {}
+        /* Fallback: console if the bridge is missing (e.g. desktop browser). */
+        console.log('[toast]', msg);
     }
 
     /* ---------- clipboard ---------- */
@@ -1118,6 +1105,7 @@
         if (un) un.onclick = async () => {
             try { window.Xenon.shutdown(); } catch (_) {}
             loadedModelFilename = null;
+            try { store.removeItem('xenon.loadedModel'); } catch (_) {}
             setIsland(null, 'Xenon', 'No model');
             await loadModels();
             await refreshHeaderState();
@@ -1171,6 +1159,7 @@
                 use.onclick = async () => {
                     try { window.Xenon.shutdown(); } catch (_) {}
                     loadedModelFilename = null;
+                    try { store.removeItem('xenon.loadedModel'); } catch (_) {}
                     setIsland(null, 'Xenon', 'No model');
                     await loadModels();
                     await refreshHeaderState();
@@ -1242,10 +1231,14 @@
             const rc = window.Xenon.loadModel(path);
             if (rc === 0) {
                 loadedModelFilename = active.filename;
+                try { store.setItem('xenon.loadedModel', loadedModelFilename); } catch (_) {}
                 setIsland('ready', active.name, '');
                 toast('Model ready: ' + active.name);
+                try { loadModels(); } catch (_) {}
+                try { refreshHeaderState(); } catch (_) {}
             } else {
                 loadedModelFilename = null;
+                try { store.removeItem('xenon.loadedModel'); } catch (_) {}
                 let why = 'code ' + rc;
                 try {
                     if (window.Xenon.statusString) why = window.Xenon.statusString(rc);

@@ -902,6 +902,19 @@ public class MainActivity extends AppCompatActivity {
     /* ============================================================ */
 
     @JavascriptInterface
+    public void nativeToast(String msg) {
+        if (msg == null) msg = "";
+        final String m = msg;
+        runOnUiThread(() -> {
+            try {
+                android.widget.Toast.makeText(
+                    MainActivity.this, m,
+                    android.widget.Toast.LENGTH_SHORT).show();
+            } catch (Throwable ignored) {}
+        });
+    }
+
+    @JavascriptInterface
     public void startLocalServer() {
         try {
             ServerService.start(this);
@@ -1000,6 +1013,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void    resetContext()                              { MainActivity.this.resetContext(); }
         @JavascriptInterface public void    downloadAndInstallApk(String u, String v)   { MainActivity.this.downloadAndInstallApk(u, v); }
         @JavascriptInterface public void    saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
+        @JavascriptInterface public void    nativeToast(String msg)                  { MainActivity.this.nativeToast(msg); }
         @JavascriptInterface public void   startLocalServer()                      { MainActivity.this.startLocalServer(); }
         @JavascriptInterface public void   stopLocalServer()                       { MainActivity.this.stopLocalServer(); }
         @JavascriptInterface public int    getServerPort()                         { return MainActivity.this.getServerPort(); }

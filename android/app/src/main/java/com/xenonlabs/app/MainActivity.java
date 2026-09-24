@@ -184,8 +184,10 @@ public class MainActivity extends AppCompatActivity {
                     if (!nativeLoaded) return false;
                     final boolean[] ok = { false };
                     try {
+                        Log.i(TAG, "server gen: prompt=" + prompt.length() + " chars, max=" + maxTokens);
                         int rc = nativeGenerateStream(prompt, maxTokens, temperature, topP, topK,
                             piece -> onToken.onToken(piece));
+                        Log.i(TAG, "server gen: rc=" + rc);
                         ok[0] = (rc == 0);
                     } catch (Throwable t) {
                         Log.e(TAG, "server generate failed", t);

@@ -3,6 +3,10 @@
 #include <string.h>
 #include "xenonlabs.h"
 
+#include <android/log.h>
+#define LOG_TAG "XenonJNI"
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
 static xenon_model_t   *g_model = NULL;
 static xenon_context_t *g_ctx   = NULL;
 
@@ -58,26 +62,66 @@ Java_com_xenonlabs_app_MainActivity_nativeGenerateStream(JNIEnv *env, jobject th
                                                          jint topK,
                                                          jobject callback) {
     (void)thiz;
-    if (!g_ctx) return -1;
 
+    if (!env || !jprompt || !callback) return (jint)XENON_ERR_ARG;
+
+    /* --- context check --- */
+    if (!g_ctx) {
+        LOGE("nativeGenerateStream: no context");
+        return (jint)XENON_ERR_RUNTIME;
+    }
+
+    /* --- resolve onToken method --- */
     jclass cls = (*env)->GetObjectClass(env, callback);
+    if (!cls) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        LOGE("nativeGenerateStream: GetObjectClass failed");
+        return (jint)XENON_ERR_RUNTIME;
+    }
+
     jmethodID mid = (*env)->GetMethodID(env, cls, "onToken", "(Ljava/lang/String;)V");
-    if (!mid) return -2;
+    if (!mid) {
+        /* Clear the pending NoSuchMethodError so subsequent JNI calls work. */
+        if ((*env)->ExceptionCheck(env)) {
+            LOGE("nativeGenerateStream: onToken method not found");
+            (*env)->ExceptionDescribe(env);
+            (*env)->ExceptionClear(env);
+        }
+        (*env)->DeleteLocalRef(env, cls);
+        return (jint)XENON_ERR_ARG;
+    }
 
+    /* --- get prompt bytes --- */
     const char *prompt = (*env)->GetStringUTFChars(env, jprompt, NULL);
-    if (!prompt) return -3;
+    if (!prompt) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, cls);
+        return (jint)XENON_ERR_ARG;
+    }
 
+    /* --- params --- */
     xenon_gen_params_t gp = xenon_default_gen_params();
     gp.max_tokens  = (int)maxTokens;
     gp.temperature = (float)temperature;
     gp.top_p       = (float)topP;
     gp.top_k       = (int)topK;
 
+    /* --- run generation --- */
     stream_ctx_t sc = { env, callback, mid };
-    xenon_status_t st = xenon_generate_stream(g_ctx, prompt, &gp, stream_trampoline, &sc);
+    xenon_status_t st = xenon_generate_stream(g_ctx, prompt, &gp,
+                                              stream_trampoline, &sc);
 
+    /* --- cleanup --- */
     (*env)->ReleaseStringUTFChars(env, jprompt, prompt);
-    return st == XENON_OK ? 0 : -4;
+    (*env)->DeleteLocalRef(env, cls);
+
+    /* If a callback exception is still pending, clear it before returning. */
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+    }
+
+    return (jint)st;
 }
 
 JNIEXPORT void JNICALL

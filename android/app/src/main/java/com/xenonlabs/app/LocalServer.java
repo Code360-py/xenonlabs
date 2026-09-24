@@ -320,10 +320,21 @@ public class LocalServer {
 
         if (!stream) {
             StringBuilder acc = new StringBuilder();
-            boolean ok = generator.generate(prompt.toString(), maxTokens,
-                    (float) temp, (float) topP, topK,
-                    piece -> { acc.append(piece); return true; });
-            if (!ok) { sendError(out, 500, "generation failed"); return; }
+            boolean ok = false;
+            String err = null;
+            try {
+                ok = generator.generate(prompt.toString(), maxTokens,
+                        (float) temp, (float) topP, topK,
+                        piece -> { acc.append(piece); return true; });
+            } catch (Throwable t) {
+                err = t.getClass().getSimpleName() + ": " + t.getMessage();
+                ok = false;
+            }
+            if (!ok) {
+                sendError(out, 500,
+                    "generation failed" + (err != null ? " — " + err : ""));
+                return;
+            }
 
             try {
                 JSONObject msg = new JSONObject();

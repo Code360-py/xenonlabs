@@ -1262,10 +1262,25 @@
     const DEFAULTS = {
         maxTokens: 256, temperature: 0.7, topP: 0.95, topK: 40,
         repeatPenalty: 1.10, threads: 4, ctx: 2048, seed: -1,
-        theme: 'dark', accent: 'blue', streaming: true, markdown: true,
+        theme: 'auto', accent: 'blue', streaming: true, markdown: true,
         system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
     };
-    function applyTheme(t) { document.body.dataset.theme = t || 'dark'; }
+    const _themeMq = window.matchMedia('(prefers-color-scheme: dark)');
+    let _themePref = 'auto';
+
+    function _resolveTheme(pref) {
+        if (pref === 'auto') return _themeMq.matches ? 'dark' : 'light';
+        return pref;
+    }
+    function applyTheme(t) {
+        _themePref = t || 'auto';
+        document.body.dataset.theme = _resolveTheme(_themePref);
+        document.body.dataset.themePref = _themePref;
+        document.documentElement.setAttribute('data-theme-ready', '1');
+    }
+    _themeMq.addEventListener('change', () => {
+        if (_themePref === 'auto') applyTheme('auto');
+    });
     function applyAccent(a) { document.body.dataset.accent = a || 'blue'; }
 
     function loadSettings() {
@@ -1301,9 +1316,11 @@
         setC('swStream', local.streaming);
         setC('swMarkdown', local.markdown);
 
-        applyTheme(local.theme);
+        const themePref = local.theme || 'auto';
+        applyTheme(themePref);
         applyAccent(local.accent);
-        $$a('#themeSegment button').forEach(b => b.classList.toggle('active', b.dataset.theme === local.theme));
+        $$a('#themeSegment button').forEach(b =>
+            b.classList.toggle('active', b.dataset.theme === themePref));
         $$a('#accentSwatches button').forEach(b => b.classList.toggle('active', b.dataset.accent === local.accent));
 
         bindRange('sMax', 'oMax');

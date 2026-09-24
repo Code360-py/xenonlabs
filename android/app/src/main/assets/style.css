@@ -1,3 +1,13 @@
+/* Pre-JS paint: system pref before app.js runs */
+@media (prefers-color-scheme: light) {
+    html:not([data-theme-ready]) body {
+        --bg: #ffffff; --bg-2: #f5f6f8; --bg-3: #eceef2;
+        --bg-4: #e2e5eb; --bg-user: #eef1f6;
+        --fg: #0e1116; --fg-dim: #5a6675; --fg-faint: #9aa4b2;
+        --border: rgba(0,0,0,.08); --border-2: rgba(0,0,0,.14);
+    }
+}
+
 /* ============================================================
    XenonLabs — clean dark UI
    ============================================================ */
@@ -31,6 +41,25 @@ body[data-theme="darker"] {
 body[data-theme="blue"] {
     --bg:    #0a0f1a; --bg-2: #111826; --bg-3: #1a2234; --bg-4: #252e44; --bg-user: #161d2b;
 }
+
+
+/* ============================================================
+   Light theme
+   ============================================================ */
+body[data-theme="light"] {
+    --bg:         #ffffff;
+    --bg-2:       #f5f6f8;
+    --bg-3:       #eceef2;
+    --bg-4:       #e2e5eb;
+    --bg-user:    #eef1f6;
+    --fg:         #0e1116;
+    --fg-dim:     #5a6675;
+    --fg-faint:   #9aa4b2;
+    --border:     rgba(0,0,0,.08);
+    --border-2:   rgba(0,0,0,.14);
+    color-scheme: light;
+}
+html { color-scheme: dark; }
 
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 

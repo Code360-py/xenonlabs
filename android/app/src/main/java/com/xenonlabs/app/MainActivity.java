@@ -47,6 +47,15 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
+    /* Set by onCreate. Used by ServerService to obtain a
+     * generator without holding a reference to a specific
+     * activity instance. */
+    private static LocalServer.Generator sGenerator;
+
+    public static LocalServer.Generator getGenerator() {
+        return sGenerator;
+    }
+
     private static final String TAG = "XenonLabs";
     private static final String NOTIF_CHANNEL_ID = "xenon-generation";
     private static final int NOTIF_ID = 42;
@@ -165,6 +174,31 @@ public class MainActivity extends AppCompatActivity {
             });
 
             web.addJavascriptInterface(new Bridge(), "Xenon");
+
+            /* Provide a Generator for the local server. */
+            sGenerator = new LocalServer.Generator() {
+                @Override
+                public boolean generate(String prompt, int maxTokens,
+                                        float temperature, float topP, int topK,
+                                        LocalServer.TokenSink onToken) {
+                    if (!nativeLoaded) return false;
+                    final boolean[] ok = { false };
+                    try {
+                        int rc = nativeGenerateStream(prompt, maxTokens, temperature, topP, topK,
+                            piece -> onToken.onToken(piece));
+                        ok[0] = (rc == 0);
+                    } catch (Throwable t) {
+                        Log.e(TAG, "server generate failed", t);
+                        ok[0] = false;
+                    }
+                    return ok[0];
+                }
+                @Override
+                public String modelName() {
+                    String f = AppState.activeModelFilename(MainActivity.this);
+                    return (f != null) ? f : "xenon-default";
+                }
+            };
             web.loadUrl("file:///android_asset/index.html");
 
             initTts();
@@ -213,6 +247,7 @@ public class MainActivity extends AppCompatActivity {
         if (t != null) {
             try { t.join(2000); } catch (InterruptedException ignored) {}
         }
+        sGenerator = null;
         try {
             if (nativeLoaded) nativeShutdown();
         } catch (Throwable ignored) {}
@@ -860,6 +895,74 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /* ============================================================ */
+    /* Local server management                                      */
+    /* ============================================================ */
+
+    @JavascriptInterface
+    public void startLocalServer() {
+        try {
+            ServerService.start(this);
+        } catch (Throwable t) {
+            Log.e(TAG, "startLocalServer failed", t);
+        }
+    }
+
+    @JavascriptInterface
+    public void stopLocalServer() {
+        try {
+            ServerService.stop(this);
+        } catch (Throwable t) {
+            Log.e(TAG, "stopLocalServer failed", t);
+        }
+    }
+
+    @JavascriptInterface
+    public int getServerPort() {
+        return ServerService.getPort(this);
+    }
+
+    @JavascriptInterface
+    public void setServerPort(int port) {
+        if (port < 1024 || port > 65535) return;
+        ServerService.setPort(this, port);
+    }
+
+    @JavascriptInterface
+    public String getServerApiKey() {
+        return ServerService.getApiKey(this);
+    }
+
+    @JavascriptInterface
+    public String regenerateServerApiKey() {
+        return ServerService.regenerateKey(this);
+    }
+
+    @JavascriptInterface
+    public boolean isServerEnabled() {
+        return ServerService.isEnabled(this);
+    }
+
+    /** Returns a small JSON blob with the current status. */
+    @JavascriptInterface
+    public String getServerStatus() {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("enabled", ServerService.isEnabled(this));
+            o.put("port", ServerService.getPort(this));
+            String ip = com.xenonlabs.app.LocalServer.localIpv4();
+            o.put("ip", ip != null ? ip : "");
+            if (ip != null) {
+                o.put("url", "http://" + ip + ":" + ServerService.getPort(this) + "/v1");
+            } else {
+                o.put("url", "");
+            }
+            return o.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
     public class Bridge {
         @JavascriptInterface public int     loadModel(String p)                        { return MainActivity.this.loadModel(p); }
         @JavascriptInterface public void    shutdown()                                 { MainActivity.this.shutdown(); }
@@ -888,6 +991,14 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void    resetContext()                              { MainActivity.this.resetContext(); }
         @JavascriptInterface public void    downloadAndInstallApk(String u, String v)   { MainActivity.this.downloadAndInstallApk(u, v); }
         @JavascriptInterface public void    saveWidgetReply(String text)                { MainActivity.this.saveWidgetReply(text); }
+        @JavascriptInterface public void   startLocalServer()                      { MainActivity.this.startLocalServer(); }
+        @JavascriptInterface public void   stopLocalServer()                       { MainActivity.this.stopLocalServer(); }
+        @JavascriptInterface public int    getServerPort()                         { return MainActivity.this.getServerPort(); }
+        @JavascriptInterface public void   setServerPort(int port)                 { MainActivity.this.setServerPort(port); }
+        @JavascriptInterface public String getServerApiKey()                       { return MainActivity.this.getServerApiKey(); }
+        @JavascriptInterface public String regenerateServerApiKey()                { return MainActivity.this.regenerateServerApiKey(); }
+        @JavascriptInterface public boolean isServerEnabled()                      { return MainActivity.this.isServerEnabled(); }
+        @JavascriptInterface public String getServerStatus()                       { return MainActivity.this.getServerStatus(); }
         @JavascriptInterface public void    exportBackup(String json, String name) { MainActivity.this.exportBackup(json, name); }
         @JavascriptInterface public void    importBackup()                         { MainActivity.this.importBackup(); }
     }

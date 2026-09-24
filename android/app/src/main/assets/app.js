@@ -1091,6 +1091,11 @@
 
     function loadSettings() {
         const s = JSON.parse(window.Xenon.getSettings());
+
+        /* Version display */
+        const vEl = document.getElementById('versionLine');
+        if (vEl) vEl.textContent = 'v' + APP_VERSION;
+
         const local = {
             repeatPenalty: parseFloat(store.getItem('xenon.repeatPenalty') || DEFAULTS.repeatPenalty),
             threads: parseInt(store.getItem('xenon.threads') || DEFAULTS.threads, 10),
@@ -1113,7 +1118,7 @@
         setV('sCtx', local.ctx);
         setV('sSeed', local.seed);
         const sysEl = document.getElementById('sSystem');
-        if (sysEl) sysEl.value = s.system;
+        if (sysEl) sysEl.value = s.system || DEFAULTS.system;
         setC('swStream', local.streaming);
         setC('swMarkdown', local.markdown);
 
@@ -1172,6 +1177,132 @@
         if (m) { m.innerHTML = '<i class="fa-solid fa-check"></i> Saved'; setTimeout(() => m.textContent = '', 1500); }
         toast('Settings saved');
     };
+
+    /* ---------- local server ---------- */
+    function refreshServerUi() {
+        const toggle = document.getElementById('serverToggle');
+        const cfg    = document.getElementById('serverConfig');
+        const status = document.getElementById('serverStatus');
+        const urlBtn = document.getElementById('serverUrl');
+        const urlTxt = document.getElementById('serverUrlText');
+        const keyEl  = document.getElementById('serverKey');
+        const portEl = document.getElementById('serverPort');
+        if (!toggle) return;
+
+        let st;
+        try { st = JSON.parse(window.Xenon.getServerStatus()); }
+        catch (_) { st = { enabled: false, port: 8080, ip: '', url: '' }; }
+
+        toggle.checked = !!st.enabled;
+        if (portEl && document.activeElement !== portEl) portEl.value = st.port;
+        if (keyEl) keyEl.value = window.Xenon.getServerApiKey();
+        if (cfg) cfg.hidden = !st.enabled;
+
+        if (status) {
+            status.classList.remove('running', 'error');
+            if (st.enabled) {
+                if (st.url) {
+                    status.classList.add('running');
+                    status.textContent = 'Running · ' + st.url;
+                } else {
+                    status.classList.add('error');
+                    status.textContent = 'Running · no Wi-Fi IPv4 found';
+                }
+            } else {
+                status.textContent = 'Stopped';
+            }
+        }
+        if (urlBtn && urlTxt) {
+            if (st.enabled && st.url) {
+                urlBtn.style.display = '';
+                urlTxt.textContent = st.url;
+            } else {
+                urlBtn.style.display = 'none';
+            }
+        }
+    }
+
+    const serverToggle = document.getElementById('serverToggle');
+    if (serverToggle) {
+        serverToggle.addEventListener('change', () => {
+            try {
+                if (serverToggle.checked) window.Xenon.startLocalServer();
+                else                      window.Xenon.stopLocalServer();
+            } catch (e) {
+                toast('Server error: ' + e.message, 'fa-solid fa-triangle-exclamation');
+            }
+            setTimeout(refreshServerUi, 300);
+        });
+    }
+
+    const serverPortEl = document.getElementById('serverPort');
+    if (serverPortEl) {
+        serverPortEl.addEventListener('change', () => {
+            const p = parseInt(serverPortEl.value, 10);
+            if (p >= 1024 && p <= 65535) {
+                try { window.Xenon.setServerPort(p); } catch (_) {}
+                toast('Port set to ' + p);
+                if (window.Xenon.isServerEnabled && window.Xenon.isServerEnabled()) {
+                    try { window.Xenon.stopLocalServer(); } catch (_) {}
+                    setTimeout(() => {
+                        try { window.Xenon.startLocalServer(); } catch (_) {}
+                        setTimeout(refreshServerUi, 300);
+                    }, 300);
+                }
+            } else {
+                toast('Port must be 1024–65535', 'fa-solid fa-triangle-exclamation');
+                refreshServerUi();
+            }
+        });
+    }
+
+    const serverKeyRegen = document.getElementById('serverKeyRegen');
+    if (serverKeyRegen) {
+        serverKeyRegen.addEventListener('click', () => {
+            if (!confirm('Regenerate API key? Any connected clients will stop working.')) return;
+            try { window.Xenon.regenerateServerApiKey(); } catch (_) {}
+            refreshServerUi();
+            toast('New API key generated');
+        });
+    }
+
+    const serverKeyCopy = document.getElementById('serverKeyCopy');
+    if (serverKeyCopy) {
+        serverKeyCopy.addEventListener('click', () => {
+            const el = document.getElementById('serverKey');
+            if (!el || !el.value) return;
+            try {
+                navigator.clipboard.writeText(el.value);
+                toast('API key copied');
+            } catch (_) {
+                el.removeAttribute('readonly');
+                el.select();
+                try { document.execCommand('copy'); toast('API key copied'); }
+                catch (_) { toast('Copy failed'); }
+                el.setAttribute('readonly', 'readonly');
+            }
+        });
+    }
+
+    const serverUrlBtn = document.getElementById('serverUrl');
+    if (serverUrlBtn) {
+        serverUrlBtn.addEventListener('click', () => {
+            const el = document.getElementById('serverUrlText');
+            if (!el) return;
+            try { navigator.clipboard.writeText(el.textContent); toast('URL copied'); }
+            catch (_) { toast(el.textContent); }
+        });
+    }
+
+    /* Refresh server status when settings tab opens */
+    document.querySelectorAll('.xl-tab').forEach(t => {
+        t.addEventListener('click', () => {
+            if (t.dataset.tab === 'settings') setTimeout(refreshServerUi, 100);
+        });
+    });
+
+    /* Initial status load */
+    setTimeout(refreshServerUi, 200);
 
     /* ---------- export / import ---------- */
     function exportAll() {
@@ -1301,7 +1432,7 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-    const APP_VERSION  = '2.4.1';
+    const APP_VERSION  = '3.0.0';
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 

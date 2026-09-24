@@ -81,116 +81,245 @@
 
     <!-- ==================== SETTINGS ==================== -->
     <section id="view-settings" class="xl-view">
-        <header class="xl-chat-header">
-            <div class="xl-header-spacer"></div>
-            <div class="xl-header-title">Settings</div>
-            <div class="xl-header-spacer"></div>
-        </header>
+    <div class="xl-scroll">
 
-        <div class="xl-scroll">
+        <!-- ============ Model behavior ============ -->
+        <h2 class="xl-section">Model behavior</h2>
+        <div class="xl-card">
 
-            <h6 class="xl-section">Generation</h6>
-            <div class="xl-card">
-                <div class="xl-row"><span><i class="fa-solid fa-hashtag xl-row-icon"></i>Max tokens</span><output id="oMax">256</output></div>
+            <div class="xl-field">
+                <div class="xl-field-head">
+                    <label for="sMax">Max reply length</label>
+                    <output id="oMax">256</output>
+                </div>
                 <input type="range" id="sMax" min="32" max="2048" step="32" value="256" class="form-range">
+                <div class="xl-field-help">Upper limit on tokens per reply.</div>
+            </div>
 
-                <div class="xl-row"><span><i class="fa-solid fa-temperature-half xl-row-icon"></i>Temperature</span><output id="oTemp">0.70</output></div>
+            <div class="xl-field">
+                <div class="xl-field-head">
+                    <label for="sTemp">Creativity</label>
+                    <output id="oTemp">0.70</output>
+                </div>
                 <input type="range" id="sTemp" min="0" max="150" step="1" value="70" class="form-range">
-
-                <div class="xl-row"><span><i class="fa-solid fa-filter xl-row-icon"></i>Top-p</span><output id="oTopP">0.95</output></div>
-                <input type="range" id="sTopP" min="1" max="100" step="1" value="95" class="form-range">
-
-                <div class="xl-row"><span><i class="fa-solid fa-list-ol xl-row-icon"></i>Top-k</span><output id="oTopK">40</output></div>
-                <input type="range" id="sTopK" min="0" max="100" step="1" value="40" class="form-range">
-
-                <div class="xl-row"><span><i class="fa-solid fa-repeat xl-row-icon"></i>Repeat penalty</span><output id="oRep">1.10</output></div>
-                <input type="range" id="sRep" min="100" max="150" step="1" value="110" class="form-range">
+                <div class="xl-field-help">Lower is more focused. Higher is more varied.</div>
             </div>
 
-            <h6 class="xl-section">Performance</h6>
-            <div class="xl-card">
-                <div class="xl-row"><span><i class="fa-solid fa-microchip xl-row-icon"></i>Threads</span><output id="oThreads">4</output></div>
-                <input type="range" id="sThreads" min="1" max="8" step="1" value="4" class="form-range">
-
-                <div class="xl-row"><span><i class="fa-solid fa-window-maximize xl-row-icon"></i>Context size</span><output id="oCtx">2048</output></div>
+            <div class="xl-field">
+                <div class="xl-field-head">
+                    <label for="sCtx">Context size</label>
+                    <output id="oCtx">2048</output>
+                </div>
                 <input type="range" id="sCtx" min="512" max="8192" step="512" value="2048" class="form-range">
-
-                <div class="xl-row"><span><i class="fa-solid fa-seedling xl-row-icon"></i>Random seed</span><output id="oSeed">-1</output></div>
-                <input type="range" id="sSeed" min="-1" max="9999" step="1" value="-1" class="form-range">
+                <div class="xl-field-help">How much conversation history the model can see at once.</div>
             </div>
 
-            <h6 class="xl-section">Appearance</h6>
+        </div>
+
+        <!-- ============ Advanced (collapsed) ============ -->
+        <details class="xl-details">
+            <summary>Advanced</summary>
             <div class="xl-card">
-                <div class="xl-row"><span><i class="fa-solid fa-circle-half-stroke xl-row-icon"></i>Theme</span></div>
-                <div class="xl-segment" id="themeSegment">
-                    <button data-theme="dark" class="active">Slate</button>
-                    <button data-theme="darker">Ink</button>
-                    <button data-theme="blue">Mist</button>
+
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label for="sTopP">Top-p</label>
+                        <output id="oTopP">0.95</output>
+                    </div>
+                    <input type="range" id="sTopP" min="1" max="100" step="1" value="95" class="form-range">
+                    <div class="xl-field-help">Nucleus sampling threshold.</div>
                 </div>
 
-                <div class="xl-row" style="margin-top:14px;">
-                    <span><i class="fa-solid fa-palette xl-row-icon"></i>Accent color</span>
-                </div>
-                <div class="xl-swatches" id="accentSwatches">
-                    <button data-accent="blue"    class="active" aria-label="Blue"></button>
-                    <button data-accent="purple"               aria-label="Purple"></button>
-                    <button data-accent="green"                aria-label="Green"></button>
-                    <button data-accent="orange"               aria-label="Orange"></button>
-                    <button data-accent="pink"                 aria-label="Pink"></button>
-                    <button data-accent="graphite"             aria-label="Graphite"></button>
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label for="sTopK">Top-k</label>
+                        <output id="oTopK">40</output>
+                    </div>
+                    <input type="range" id="sTopK" min="0" max="100" step="1" value="40" class="form-range">
+                    <div class="xl-field-help">Consider only the top K tokens at each step.</div>
                 </div>
 
-                <div class="xl-row" style="margin-top:14px;">
-                    <span><i class="fa-solid fa-code xl-row-icon"></i>Render Markdown</span>
-                    <label class="xl-switch"><input type="checkbox" id="swMarkdown" checked><i></i></label>
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label for="sRep">Repeat penalty</label>
+                        <output id="oRep">1.10</output>
+                    </div>
+                    <input type="range" id="sRep" min="100" max="150" step="1" value="110" class="form-range">
+                    <div class="xl-field-help">Discourages repeating the same words.</div>
                 </div>
 
-                <div class="xl-row">
-                    <span><i class="fa-solid fa-wand-magic-sparkles xl-row-icon"></i>Streaming</span>
-                    <label class="xl-switch"><input type="checkbox" id="swStream" checked><i></i></label>
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label for="sThreads">CPU threads</label>
+                        <output id="oThreads">4</output>
+                    </div>
+                    <input type="range" id="sThreads" min="1" max="8" step="1" value="4" class="form-range">
+                    <div class="xl-field-help">How many cores to use. Too many can hurt.</div>
                 </div>
+
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label for="sSeed">Seed</label>
+                        <output id="oSeed">-1</output>
+                    </div>
+                    <input type="range" id="sSeed" min="-1" max="9999" step="1" value="-1" class="form-range">
+                    <div class="xl-field-help">-1 means random. Fix a number for reproducible replies.</div>
+                </div>
+
+            </div>
+        </details>
+
+        <!-- ============ System prompt ============ -->
+        <h2 class="xl-section">System prompt</h2>
+        <div class="xl-card">
+            <div class="xl-presets" id="sysPresets">
+                <button type="button" class="xl-chip" data-preset="You are a helpful assistant.">Default</button>
+                <button type="button" class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate.">Concise</button>
+                <button type="button" class="xl-chip" data-preset="You are a senior software engineer. Explain your reasoning and prefer working code over prose.">Engineer</button>
+                <button type="button" class="xl-chip" data-preset="You are a patient teacher. Explain every concept in simple language with examples.">Teacher</button>
+                <button type="button" class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so. Pay attention to anything the user tells you about themselves (name, preferences, context) and use it in later replies.">Personal</button>
+            </div>
+            <textarea id="sSystem" rows="5" class="xl-textarea"></textarea>
+        </div>
+
+        <!-- ============ Appearance ============ -->
+        <h2 class="xl-section">Appearance</h2>
+        <div class="xl-card">
+            <div class="xl-row">
+                <span><i class="fa-solid fa-moon xl-row-icon"></i> Theme</span>
+            </div>
+            <div class="xl-segment" id="themeSegment">
+                <button type="button" data-theme="dark">Dark</button>
+                <button type="button" data-theme="darker">Darker</button>
+                <button type="button" data-theme="blue">Blue</button>
+            </div>
+            <div class="xl-row" style="margin-top:14px">
+                <span><i class="fa-solid fa-palette xl-row-icon"></i> Accent</span>
+            </div>
+            <div class="xl-swatches" id="accentSwatches">
+                <button type="button" data-accent="blue"     aria-label="Blue"></button>
+                <button type="button" data-accent="purple"   aria-label="Purple"></button>
+                <button type="button" data-accent="green"    aria-label="Green"></button>
+                <button type="button" data-accent="orange"   aria-label="Orange"></button>
+                <button type="button" data-accent="pink"     aria-label="Pink"></button>
+                <button type="button" data-accent="graphite" aria-label="Graphite"></button>
+            </div>
+        </div>
+
+        <!-- ============ Behavior toggles ============ -->
+        <h2 class="xl-section">Behavior</h2>
+        <div class="xl-card">
+            <div class="xl-row">
+                <span><i class="fa-solid fa-bolt xl-row-icon"></i> Stream replies</span>
+                <label class="xl-switch"><input type="checkbox" id="swStream" checked><i></i></label>
+            </div>
+            <div class="xl-row">
+                <span><i class="fa-solid fa-code xl-row-icon"></i> Render Markdown</span>
+                <label class="xl-switch"><input type="checkbox" id="swMarkdown" checked><i></i></label>
+            </div>
+        </div>
+
+        <!-- ============ Local server ============ -->
+        <h2 class="xl-section">Local server</h2>
+        <div class="xl-card">
+            <div class="xl-row">
+                <span><i class="fa-solid fa-server xl-row-icon"></i> Enable local API</span>
+                <label class="xl-switch"><input type="checkbox" id="serverToggle"><i></i></label>
+            </div>
+            <div class="xl-field-help" style="margin-top:8px">
+                Serves an OpenAI-compatible API on your Wi-Fi. Useful for connecting
+                desktop apps, scripts, or other phones to this model.
             </div>
 
-            <h6 class="xl-section">System prompt</h6>
-            <div class="xl-card">
-                <div class="xl-presets" id="sysPresets">
-                    <button class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so. Pay attention to anything the user tells you about themselves (name, preferences, context) and use it in later replies.">Default</button>
-                    <button class="xl-chip" data-preset="You are a senior software engineer. Provide correct, minimal, runnable code. Prefer clarity over cleverness. Explain only what is non-obvious.">Coder</button>
-                    <button class="xl-chip" data-preset="You are a patient teacher. Explain concepts step by step with concrete examples. Ask clarifying questions if the topic is ambiguous.">Teacher</button>
-                    <button class="xl-chip" data-preset="You are a careful research assistant. Answer with evidence, cite assumptions, and note where certainty ends.">Researcher</button>
-                    <button class="xl-chip" data-preset="You are a creative writing partner. Write vivid, sensory prose. Match the user's tone and genre.">Writer</button>
-                    <button class="xl-chip" data-preset="You are a professional editor. Rewrite user text for clarity and tone. Preserve meaning. Show the revised version only.">Editor</button>
-                    <button class="xl-chip" data-preset="Answer in under 20 words. Be direct. No preamble.">Terse</button>
-                    <button class="xl-chip" data-preset="You are a Socratic tutor. Guide the user with questions instead of giving answers directly.">Socratic</button>
+            <div id="serverConfig" hidden>
+                <div class="xl-field" style="margin-top:14px">
+                    <div class="xl-field-head">
+                        <label for="serverPort">Port</label>
+                    </div>
+                    <input type="number" id="serverPort" min="1024" max="65535" value="8080"
+                           inputmode="numeric"
+                           style="width:100%;background:var(--bg-3);border:.5px solid var(--border);
+                                  color:var(--fg);border-radius:8px;padding:9px 12px;
+                                  font:inherit;font-size:14px;outline:none">
                 </div>
-                <textarea id="sSystem" rows="5" class="form-control xl-textarea">You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so. Pay attention to anything the user tells you about themselves (name, preferences, context) and use it in later replies.</textarea>
-            </div>
 
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label for="serverKey">API key</label>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:stretch">
+                        <input type="text" id="serverKey" readonly
+                               style="flex:1;min-width:0;background:var(--bg-3);
+                                      border:.5px solid var(--border);color:var(--fg-dim);
+                                      border-radius:8px;padding:9px 12px;
+                                      font:12px 'SF Mono',Menlo,monospace;outline:none">
+                        <button type="button" id="serverKeyRegen"
+                                style="border:.5px solid var(--border-2);background:var(--bg-3);
+                                       color:var(--fg);border-radius:8px;padding:0 14px;
+                                       font:inherit;font-size:13px;cursor:pointer">
+                            <i class="fa-solid fa-rotate"></i>
+                        </button>
+                        <button type="button" id="serverKeyCopy"
+                                style="border:.5px solid var(--border-2);background:var(--bg-3);
+                                       color:var(--fg);border-radius:8px;padding:0 14px;
+                                       font:inherit;font-size:13px;cursor:pointer">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                    <div class="xl-field-help">
+                        Required as <code>Authorization: Bearer &lt;key&gt;</code> on every request.
+                    </div>
+                </div>
+
+                <div id="serverStatus" class="xl-server-status">Stopped</div>
+                <button type="button" id="serverUrl"
+                        class="xl-secondary" style="margin-top:8px;display:none">
+                    <i class="fa-solid fa-link"></i> <span id="serverUrlText"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ============ Data ============ -->
+        <h2 class="xl-section">Data</h2>
+        <div class="xl-card">
+            <button id="exportData" class="xl-secondary">
+                <i class="fa-solid fa-file-export"></i> Export backup
+            </button>
+            <button id="importData" class="xl-secondary" style="margin-top:8px">
+                <i class="fa-solid fa-file-import"></i> Import backup
+            </button>
+            <input type="file" id="importFile" accept=".json,application/json" hidden>
+        </div>
+
+        <!-- ============ Danger zone ============ -->
+        <h2 class="xl-section">Danger zone</h2>
+        <div class="xl-card">
+            <button id="clearHistory" class="xl-danger">
+                <i class="fa-solid fa-trash"></i> Clear all conversations
+            </button>
+            <button id="resetSettings" class="xl-danger" style="margin-top:8px">
+                <i class="fa-solid fa-rotate-left"></i> Reset all settings
+            </button>
+        </div>
+
+        <!-- ============ Save ============ -->
+        <div class="xl-card" style="border-color:transparent;background:transparent;padding:0">
             <button id="save" class="xl-save">
-                <i class="fa-solid fa-floppy-disk"></i> Save settings
+                <i class="fa-solid fa-check"></i> Save changes
             </button>
             <div id="savedMsg" class="xl-hint"></div>
-
-            <h6 class="xl-section">Backup</h6>
-            <div class="xl-card">
-                <button id="exportData" class="xl-secondary">
-                    <i class="fa-solid fa-file-export"></i> Export data (JSON)
-                </button>
-                <button id="importData" class="xl-secondary" style="margin-top:8px;">
-                    <i class="fa-solid fa-file-import"></i> Import from JSON
-                </button>
-                <input type="file" id="importFile" accept=".json,application/json" hidden>
-            </div>
-
-            <h6 class="xl-section">Danger zone</h6>
-            <div class="xl-card">
-                <button id="clearHistory" class="xl-danger"><i class="fa-solid fa-trash"></i> Clear all conversations</button>
-                <button id="resetSettings" class="xl-danger" style="margin-top:8px;"><i class="fa-solid fa-rotate-left"></i> Reset to defaults</button>
-            </div>
-
-            <div class="xl-gap"></div>
         </div>
-    </section>
+
+        <!-- ============ Version ============ -->
+        <div class="xl-version">
+            <div class="xl-version-name">Xenon</div>
+            <div class="xl-version-line" id="versionLine">v2.4.1</div>
+        </div>
+
+        <div class="xl-gap"></div>
+
+    </div>
+</section>
 
 </main>
 

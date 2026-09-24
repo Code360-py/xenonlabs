@@ -57,21 +57,39 @@
         <header class="xl-chat-header">
             <div class="xl-header-spacer"></div>
             <div class="xl-header-title">Models</div>
-            <button type="button" id="refreshModelsBtn" class="xl-header-btn" aria-label="Refresh">
-                <i class="fa-solid fa-rotate"></i>
+            <button type="button" id="addModelBtn" class="xl-header-btn add" aria-label="Add model">
+                <i class="fa-solid fa-plus"></i>
             </button>
         </header>
         <div class="xl-scroll">
-            <button id="importModelBtn" class="xl-import-btn">
-                <i class="fa-solid fa-file-circle-plus"></i>
-                <span>
-                    <strong>Import .gguf from device</strong>
-                    <em>Pick any GGUF file — it stays on your phone</em>
-                </span>
-            </button>
+
+            <!-- Running now -->
+            <div id="runningHero" class="xl-models-hero"></div>
+
+            <!-- Filter chips -->
+            <div class="xl-chip-row" id="modelFilters">
+                <button type="button" class="xl-filter-chip active" data-filter="all">All</button>
+                <button type="button" class="xl-filter-chip" data-filter="installed">Installed</button>
+                <button type="button" class="xl-filter-chip" data-filter="available">Available</button>
+                <button type="button" class="xl-filter-chip" data-filter="small">Small (&lt; 500 MB)</button>
+                <button type="button" class="xl-sort-btn" id="sortModelsBtn">
+                    <i class="fa-solid fa-arrow-down-wide-short"></i> <span id="sortModelsLabel">Name A–Z</span>
+                </button>
+            </div>
+
             <div id="importProgress" class="xl-import-progress" hidden>
                 <i class="fa-solid fa-circle-notch fa-spin"></i>
                 <span id="importProgressText">Importing…</span>
+            </div>
+
+            <div id="installedSection" hidden>
+                <div class="xl-models-section">Installed <span class="count" id="installedCount"></span></div>
+                <div id="installedList" class="xl-model-list"></div>
+            </div>
+
+            <div id="availableSection" hidden>
+                <div class="xl-models-section">Available <span class="count" id="availableCount"></span></div>
+                <div id="availableList" class="xl-model-list"></div>
             </div>
 
             <div id="modelList" class="xl-model-list"></div>
@@ -83,8 +101,13 @@
     <section id="view-settings" class="xl-view">
     <div class="xl-scroll">
 
+        <div class="xl-settings-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="search" id="settingsSearch" placeholder="Search settings" autocomplete="off">
+        </div>
+
         <!-- ============ Model behavior ============ -->
-        <h2 class="xl-section">Model behavior</h2>
+        <h2 class="xl-section" data-search="model behavior reply length creativity context tokens">Model behavior</h2>
         <div class="xl-card">
 
             <div class="xl-field">
@@ -328,12 +351,9 @@
             </button>
         </div>
 
-        <!-- ============ Save ============ -->
-        <div class="xl-card" style="border-color:transparent;background:transparent;padding:0">
-            <button id="save" class="xl-save">
-                <i class="fa-solid fa-check"></i> Save changes
-            </button>
-            <div id="savedMsg" class="xl-hint"></div>
+        <!-- auto-save note -->
+        <div class="xl-save-note" id="saveNote">
+            <i class="fa-solid fa-circle-check"></i> Changes save automatically
         </div>
 
         <!-- ============ Version ============ -->
@@ -372,6 +392,11 @@
         <div class="xl-sidebar-search">
             <i class="fa-solid fa-magnifying-glass"></i>
             <input type="search" id="historySearch" placeholder="Search chats" autocomplete="off">
+        </div>
+        <div class="xl-history-segments" id="historySegments">
+            <button type="button" class="active" data-seg="recent">Recent</button>
+            <button type="button" data-seg="pinned">Pinned</button>
+            <button type="button" data-seg="az">A–Z</button>
         </div>
     </div>
     <div class="xl-sidebar-section-title">Recent</div>

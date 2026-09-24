@@ -275,10 +275,68 @@
         c.updated = Date.now(); saveConvs(convs); renderHistory();
     }
     function deleteConversation(id) {
-        convs = convs.filter(c => c.id !== id);
-        if (activeId === id) activeId = convs[0] ? convs[0].id : null;
+        const idx = convs.findIndex(c => c.id === id);
+        if (idx < 0) return;
+
+        /* Save for undo */
+        const removed = convs[idx];
+        const wasActive = (activeId === id);
+
+        convs.splice(idx, 1);
+
+        if (wasActive) {
+            /* Prefer the next item (older); else previous (newer); else create new. */
+            const next = convs[idx] || convs[idx - 1] || null;
+            if (next) {
+                activeId = next.id;
+                try { window.Xenon.resetContext(); } catch (_) {}
+            } else {
+                /* Nothing left — create a fresh chat immediately. */
+                activeId = null;
+                newConversation();
+                saveConvs(convs);
+                store.setItem(ACTIVE_KEY, activeId || '');
+                renderHistory(); renderChat();
+                showUndoToast('Deleted "' + (removed.title || 'New chat') + '"',
+                    () => undoDelete(removed, idx));
+                return;
+            }
+        }
+
         store.setItem(ACTIVE_KEY, activeId || '');
-        saveConvs(convs); renderHistory();
+        saveConvs(convs);
+        renderHistory();
+        if (wasActive) renderChat();
+
+        showUndoToast('Deleted "' + (removed.title || 'New chat') + '"',
+            () => undoDelete(removed, idx));
+    }
+
+    function undoDelete(conv, idx) {
+        const i = Math.max(0, Math.min(idx, convs.length));
+        convs.splice(i, 0, conv);
+        saveConvs(convs);
+        renderHistory();
+    }
+
+    function showUndoToast(msg, onUndo) {
+        const prev = document.querySelector('.xl-toast');
+        if (prev) prev.remove();
+        const el = document.createElement('div');
+        el.className = 'xl-toast undo';
+        el.innerHTML = '<span>' + escapeHtml(msg) + '</span>' +
+                       '<button type="button">Undo</button>';
+        document.body.appendChild(el);
+        requestAnimationFrame(() => el.classList.add('show'));
+        const close = () => {
+            el.classList.remove('show');
+            setTimeout(() => el.remove(), 250);
+        };
+        el.querySelector('button').addEventListener('click', () => {
+            try { onUndo(); } catch (_) {}
+            close();
+        });
+        setTimeout(close, 5000);
     }
     function relativeTime(ts) {
         const s = (Date.now() - ts) / 1000;
@@ -302,16 +360,45 @@
                 (historyFilter ? 'No matching chats' : 'No conversations yet') + '</div>';
             return;
         }
-        const sorted = filtered.slice().sort((a, b) => b.updated - a.updated);
+        /* Segment filter */
+        if (historySeg === 'pinned') {
+            filtered = filtered.filter(c => c.pinned);
+        }
+
+        /* Sort */
+        let sorted;
+        if (historySeg === 'az') {
+            sorted = filtered.slice().sort((a, b) =>
+                (a.title || '').localeCompare(b.title || ''));
+        } else if (historySeg === 'recent') {
+            /* Pinned first, then by updated desc */
+            sorted = filtered.slice().sort((a, b) => {
+                if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+                return b.updated - a.updated;
+            });
+        } else {
+            sorted = filtered.slice().sort((a, b) => b.updated - a.updated);
+        }
+
         list.innerHTML = '';
         for (const c of sorted) {
             const el = document.createElement('div');
-            el.className = 'xl-history-item' + (c.id === activeId ? ' active' : '');
+            el.className = 'xl-history-item'
+                + (c.id === activeId ? ' active' : '')
+                + (c.pinned ? ' pinned' : '');
             el.innerHTML =
                 '<i class="fa-regular fa-message lead"></i>' +
                 '<span class="xl-history-title">' + escapeHtml(c.title || 'New chat') + '</span>' +
+                '<i class="fa-solid fa-thumbtack pin"></i>' +
                 '<span class="xl-history-time">' + relativeTime(c.updated) + '</span>' +
+                '<button class="pin-btn"><i class="fa-solid fa-thumbtack"></i></button>' +
                 '<button class="del"><i class="fa-solid fa-xmark"></i></button>';
+            el.querySelector('.pin-btn').addEventListener('click', ev => {
+                ev.stopPropagation();
+                c.pinned = !c.pinned;
+                saveConvs(convs);
+                renderHistory();
+            });
             el.addEventListener('click', ev => { if (!ev.target.closest('.del')) switchToConversation(c.id); });
             el.querySelector('.del').addEventListener('click', ev => {
                 ev.stopPropagation();
@@ -377,6 +464,10 @@
     let nextId = 1;
     const streams = new Map();
     let loadedModelFilename = null;   /* filename currently loaded in native */
+    let modelFilter = store.getItem('xenon.modelFilter') || 'all';
+    let modelSort   = store.getItem('xenon.modelSort')   || 'name';
+    let historySeg  = store.getItem('xenon.historySeg')  || 'recent';
+
     const TITLE_CB_ID = -999;         /* special callback id for auto-title */
 
     window.__xenonToken = (id, piece) => { const s = streams.get(id); if (s) s.onToken(piece); };
@@ -940,93 +1031,188 @@
         try { models = JSON.parse(window.Xenon.listModels()); }
         catch (_) { models = []; }
 
+        /* --- Hero: Running now --- */
+        renderRunningHero(models);
+
+        /* --- Filter --- */
+        let filtered = models.slice();
+        if (modelFilter === 'installed') filtered = filtered.filter(m => m.ready);
+        else if (modelFilter === 'available') filtered = filtered.filter(m => !m.ready);
+        else if (modelFilter === 'small') filtered = filtered.filter(m => m.approxBytes < 500 * 1024 * 1024);
+
+        /* --- Sort --- */
+        const cmp = {
+            name:  (a, b) => a.name.localeCompare(b.name),
+            sizeAsc:  (a, b) => a.approxBytes - b.approxBytes,
+            sizeDesc: (a, b) => b.approxBytes - a.approxBytes,
+            default:  () => 0
+        }[modelSort] || cmpName;
+        if (modelSort !== 'default') filtered.sort(cmp);
+
+        const installed = filtered.filter(m => m.ready);
+        const available = filtered.filter(m => !m.ready);
+
+        const installedSection = $('#installedSection');
+        const availableSection = $('#availableSection');
+        const installedList = $('#installedList');
+        const availableList = $('#availableList');
+
+        /* Show only the sections with content */
+        if (installedSection) installedSection.hidden = installed.length === 0;
+        if (availableSection) availableSection.hidden = available.length === 0;
+        const ic = $('#installedCount'); if (ic) ic.textContent = installed.length ? '(' + installed.length + ')' : '';
+        const ac = $('#availableCount'); if (ac) ac.textContent = available.length ? '(' + available.length + ')' : '';
+
+        /* Render into the right list */
+        if (installedList) {
+            installedList.innerHTML = '';
+            installed.forEach(m => installedList.appendChild(makeModelCard(m)));
+        }
+        if (availableList) {
+            availableList.innerHTML = '';
+            available.forEach(m => availableList.appendChild(makeModelCard(m)));
+        }
+
+        /* Legacy list hidden when new sections are used */
         list.innerHTML = '';
-        if (!models.length) {
-            list.innerHTML = '<div class="xl-empty"><div class="xl-empty-icon"><i class="fa-solid fa-cube"></i></div><div class="xl-empty-title">No models</div></div>';
+
+        /* Empty state */
+        if (!filtered.length) {
+            const el = document.createElement('div');
+            el.className = 'xl-empty';
+            el.innerHTML = '<div class="xl-empty-icon"><i class="fa-solid fa-cube"></i></div>'
+                + '<div class="xl-empty-title">No models match</div>'
+                + '<div class="xl-empty-sub">Try a different filter.</div>';
+            (installedList || list).appendChild(el);
+        }
+    }
+
+    function renderRunningHero(models) {
+        const hero = $('#runningHero');
+        if (!hero) return;
+        const active = models.find(m => m.active && m.ready);
+        const isLoaded = active && (loadedModelFilename === active.filename);
+
+        if (!active) {
+            hero.innerHTML =
+                '<div class="xl-models-hero-title"><i class="fa-solid fa-circle-notch"></i> Running now</div>'
+              + '<div class="xl-models-hero-empty">No model loaded. Tap a model below to load it.</div>';
             return;
         }
-        for (const m of models) {
-            const el = document.createElement('div');
-            el.className = 'xl-model' + (m.active ? ' active' : '');
-            el.dataset.dl = String((Math.random() * 1e9) | 0);
-            const mb  = (m.approxBytes / 1048576).toFixed(0);
-            const imb = (m.bytes / 1048576).toFixed(0);
-            el.innerHTML =
-                '<div class="xl-model-head">' +
-                    '<div class="xl-model-icon"><i class="fa-solid fa-microchip"></i></div>' +
-                    '<div class="xl-model-title">' + escapeHtml(m.name) +
-                        '<div class="xl-model-cat">' + escapeHtml(m.category || '') + '</div>' +
-                    '</div>' +
-                    (m.active ? '<span class="star"><i class="fa-solid fa-star"></i></span>' : '') +
-                '</div>' +
-                '<div class="meta">' +
-                    (m.ready
-                        ? '<i class="fa-solid fa-check"></i> Installed · ' + imb + ' MB'
-                        : '<i class="fa-solid fa-cloud-arrow-down"></i> Not downloaded · ' + mb + ' MB') +
-                '</div>' +
-                '<div class="bar"><i></i></div>' +
-                '<div class="actions"></div>';
-            const actions = el.querySelector('.actions');
-            if (!m.ready) {
-                const btn = document.createElement('button');
-                btn.className = 'primary';
-                btn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
-                btn.onclick = () => {
-                    el.querySelector('.bar').classList.add('on');
-                    btn.disabled = true;
-                    window.Xenon.downloadModel(m.url, m.filename, +el.dataset.dl);
-                };
-                actions.appendChild(btn);
-            } else {
-                const use = document.createElement('button');
-                const isLoaded = (loadedModelFilename === m.filename);
-                if (m.active && isLoaded) {
-                    use.className = '';
-                    use.innerHTML = '<i class="fa-solid fa-power-off"></i> Unload';
-                    use.onclick = async () => {
-                        try { window.Xenon.shutdown(); } catch (_) {}
-                        loadedModelFilename = null;
-                        setIsland(null, 'XenonLabs', 'No model');
-                        const hm = $('#headerModel');
-                        if (hm) {
-                            hm.classList.remove('ready','busy');
-                            const sp = hm.querySelector('span:last-child');
-                            if (sp) sp.textContent = 'No model';
-                        }
-                        const sm = $('#sidebarModel');
-                        if (sm) sm.innerHTML = '<i class="fa-solid fa-circle-notch"></i> No model loaded';
-                        toast('Model unloaded');
-                        await loadModels();
-                    };
-                } else if (m.active) {
-                    use.className = 'primary';
-                    use.innerHTML = '<i class="fa-solid fa-play"></i> Load';
-                    use.onclick = async () => {
-                        await reloadModel();
-                    };
-                } else {
-                    use.className = 'primary';
-                    use.innerHTML = '<i class="fa-solid fa-play"></i> Load';
-                    use.onclick = async () => {
-                        window.Xenon.setActiveModel(m.filename);
-                        toast('Switched to ' + m.name);
-                        await loadModels();
-                        await reloadModel();
-                    };
-                }
-                actions.appendChild(use);
 
-                const del = document.createElement('button');
-                del.innerHTML = '<i class="fa-solid fa-trash"></i> ' + (m.imported ? 'Remove' : 'Delete');
-                del.onclick = () => {
-                    if (!confirm((m.imported ? 'Remove ' : 'Delete ') + m.name + '?')) return;
-                    window.Xenon.deleteModel(m.filename);
-                    toast(m.imported ? 'Model removed' : 'Model deleted');
-                    setTimeout(loadModels, 150);
+        const mb = (active.bytes / 1048576).toFixed(0);
+        hero.innerHTML =
+            '<div class="xl-models-hero-title"><i class="fa-solid fa-bolt"></i> Running now</div>'
+          + '<div class="xl-models-hero-name">' + escapeHtml(active.name) + '</div>'
+          + '<div class="xl-models-hero-meta">'
+          +     (isLoaded ? '<span style="color:var(--green)">● Loaded</span>' : '<span>○ Not loaded</span>')
+          +     ' · ' + mb + ' MB · ' + escapeHtml(active.category || '')
+          + '</div>'
+          + '<div class="xl-models-hero-actions">'
+          +     (isLoaded
+                    ? '<button type="button" class="danger" id="heroUnload"><i class="fa-solid fa-power-off"></i> Unload</button>'
+                    : '<button type="button" id="heroLoad"><i class="fa-solid fa-play"></i> Load</button>')
+          + '</div>';
+
+        const un = document.getElementById('heroUnload');
+        if (un) un.onclick = async () => {
+            try { window.Xenon.shutdown(); } catch (_) {}
+            loadedModelFilename = null;
+            setIsland(null, 'Xenon', 'No model');
+            await loadModels();
+            await refreshHeaderState();
+        };
+        const ld = document.getElementById('heroLoad');
+        if (ld) ld.onclick = async () => {
+            await reloadModel();
+            await loadModels();
+        };
+    }
+
+    function makeModelCard(m) {
+        const el = document.createElement('div');
+        el.className = 'xl-model' + (m.active ? ' active' : '');
+        el.dataset.dl = String((Math.random() * 1e9) | 0);
+        const mb  = (m.approxBytes / 1048576).toFixed(0);
+        const imb = (m.bytes / 1048576).toFixed(0);
+        el.innerHTML =
+            '<div class="xl-model-head">' +
+                '<div class="xl-model-icon"><i class="fa-solid fa-microchip"></i></div>' +
+                '<div class="xl-model-title">' + escapeHtml(m.name) +
+                    '<div class="xl-model-cat">' + escapeHtml(m.category || '') + '</div>' +
+                '</div>' +
+                (m.active ? '<span class="star"><i class="fa-solid fa-star"></i></span>' : '') +
+            '</div>' +
+            '<div class="meta">' +
+                (m.ready
+                    ? '<i class="fa-solid fa-check"></i> Installed · ' + imb + ' MB'
+                    : '<i class="fa-solid fa-cloud-arrow-down"></i> Not downloaded · ' + mb + ' MB') +
+            '</div>' +
+            '<div class="bar"><i></i></div>' +
+            '<div class="actions"></div>';
+        const actions = el.querySelector('.actions');
+
+        if (!m.ready) {
+            const btn = document.createElement('button');
+            btn.className = 'primary';
+            btn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
+            btn.onclick = () => {
+                el.querySelector('.bar').classList.add('on');
+                btn.disabled = true;
+                window.Xenon.downloadModel(m.url, m.filename, +el.dataset.dl);
+            };
+            actions.appendChild(btn);
+        } else {
+            const isLoaded = (loadedModelFilename === m.filename);
+            const use = document.createElement('button');
+            if (m.active && isLoaded) {
+                use.className = '';
+                use.innerHTML = '<i class="fa-solid fa-power-off"></i> Unload';
+                use.onclick = async () => {
+                    try { window.Xenon.shutdown(); } catch (_) {}
+                    loadedModelFilename = null;
+                    setIsland(null, 'Xenon', 'No model');
+                    await loadModels();
+                    await refreshHeaderState();
                 };
-                actions.appendChild(del);
+            } else {
+                use.className = 'primary';
+                use.innerHTML = '<i class="fa-solid fa-play"></i> Load';
+                use.onclick = async () => {
+                    window.Xenon.setActiveModel(m.filename);
+                    await reloadModel();
+                    await loadModels();
+                };
             }
-            list.appendChild(el);
+            actions.appendChild(use);
+
+            const del = document.createElement('button');
+            del.innerHTML = '<i class="fa-solid fa-trash"></i> ' + (m.imported ? 'Remove' : 'Delete');
+            del.onclick = () => {
+                if (!confirm((m.imported ? 'Remove ' : 'Delete ') + m.name + '?')) return;
+                window.Xenon.deleteModel(m.filename);
+                toast(m.imported ? 'Model removed' : 'Model deleted');
+                setTimeout(loadModels, 150);
+            };
+            actions.appendChild(del);
+        }
+        return el;
+    }
+
+    async function refreshHeaderState() {
+        const headerModel = $('#headerModel');
+        if (headerModel) {
+            headerModel.classList.remove('ready', 'busy');
+            const span = headerModel.querySelector('span:last-child');
+            const active = loadedModelFilename || 'No model';
+            if (span) span.textContent = loadedModelFilename ? active : 'No model';
+            if (loadedModelFilename) headerModel.classList.add('ready');
+        }
+        const sideModel = $('#sidebarModel');
+        if (sideModel) {
+            sideModel.innerHTML = loadedModelFilename
+                ? '<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ' + escapeHtml(loadedModelFilename)
+                : '<i class="fa-solid fa-circle-notch"></i> No model loaded';
         }
     }
 
@@ -1177,6 +1363,106 @@
         if (m) { m.innerHTML = '<i class="fa-solid fa-check"></i> Saved'; setTimeout(() => m.textContent = '', 1500); }
         toast('Settings saved');
     };
+
+    /* ---------- settings search ---------- */
+    const settingsSearch = document.getElementById('settingsSearch');
+    if (settingsSearch) {
+        settingsSearch.addEventListener('input', () => {
+            const q = settingsSearch.value.trim().toLowerCase();
+            document.querySelectorAll('#view-settings .xl-field').forEach(f => {
+                const label = (f.querySelector('label') || {}).textContent || '';
+                const help = (f.querySelector('.xl-field-help') || {}).textContent || '';
+                const hay = (label + ' ' + help).toLowerCase();
+                f.classList.toggle('hidden', !!q && !hay.includes(q));
+            });
+            document.querySelectorAll('#view-settings .xl-section').forEach(h => {
+                const hay = ((h.dataset.search || '') + ' ' + h.textContent).toLowerCase();
+                h.classList.toggle('hidden', !!q && !hay.includes(q));
+            });
+        });
+    }
+
+    /* ---------- settings auto-save on slider release ---------- */
+    function debounce(fn, ms) {
+        let t = null;
+        return function () {
+            clearTimeout(t);
+            t = setTimeout(() => fn.apply(this, arguments), ms);
+        };
+    }
+    function commitSettings() {
+        try {
+            window.Xenon.saveSettings(
+                +document.getElementById('sMax').value,
+                +document.getElementById('sTemp').value / 100,
+                +document.getElementById('sTopP').value / 100,
+                +document.getElementById('sTopK').value,
+                document.getElementById('sSystem').value);
+            store.setItem('xenon.repeatPenalty', (+document.getElementById('sRep').value / 100).toFixed(2));
+            store.setItem('xenon.threads', String(+document.getElementById('sThreads').value));
+            store.setItem('xenon.ctx', String(+document.getElementById('sCtx').value));
+            store.setItem('xenon.seed', String(+document.getElementById('sSeed').value));
+        } catch (_) {}
+    }
+    const debouncedCommit = debounce(commitSettings, 400);
+    ['sMax','sTemp','sTopP','sTopK','sRep','sThreads','sCtx','sSeed']
+        .forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', debouncedCommit);
+        });
+    const sysTA = document.getElementById('sSystem');
+    if (sysTA) sysTA.addEventListener('input', debouncedCommit);
+
+    /* ---------- model filter chips + sort ---------- */
+    document.querySelectorAll('#modelFilters .xl-filter-chip').forEach(chip => {
+        if (chip.dataset.filter === modelFilter) chip.classList.add('active');
+        else chip.classList.remove('active');
+        chip.addEventListener('click', () => {
+            modelFilter = chip.dataset.filter;
+            store.setItem('xenon.modelFilter', modelFilter);
+            document.querySelectorAll('#modelFilters .xl-filter-chip')
+                .forEach(c => c.classList.toggle('active', c === chip));
+            loadModels();
+        });
+    });
+
+    const sortModelsBtn = document.getElementById('sortModelsBtn');
+    const sortModelsLabel = document.getElementById('sortModelsLabel');
+    const SORT_OPTIONS = [
+        { id: 'name',     label: 'Name A\u2013Z' },
+        { id: 'sizeAsc',  label: 'Size: small to large' },
+        { id: 'sizeDesc', label: 'Size: large to small' },
+        { id: 'default',  label: 'Default order' }
+    ];
+    function applySortLabel() {
+        if (!sortModelsLabel) return;
+        const o = SORT_OPTIONS.find(o => o.id === modelSort) || SORT_OPTIONS[0];
+        sortModelsLabel.textContent = o.label;
+    }
+    applySortLabel();
+    if (sortModelsBtn) {
+        sortModelsBtn.addEventListener('click', () => {
+            const idx = SORT_OPTIONS.findIndex(o => o.id === modelSort);
+            const next = SORT_OPTIONS[(idx + 1) % SORT_OPTIONS.length];
+            modelSort = next.id;
+            store.setItem('xenon.modelSort', modelSort);
+            applySortLabel();
+            loadModels();
+        });
+    }
+
+    /* ---------- history segments ---------- */
+    document.querySelectorAll('#historySegments button').forEach(btn => {
+        if (btn.dataset.seg === historySeg) btn.classList.add('active');
+        else btn.classList.remove('active');
+        btn.addEventListener('click', () => {
+            historySeg = btn.dataset.seg;
+            store.setItem('xenon.historySeg', historySeg);
+            document.querySelectorAll('#historySegments button')
+                .forEach(b => b.classList.toggle('active', b === btn));
+            renderHistory();
+        });
+    });
 
     /* ---------- local server ---------- */
     function refreshServerUi() {

@@ -110,7 +110,20 @@
         </div>
 
         <!-- ============ Model behavior ============ -->
-        <h2 class="xl-section" data-search="model behavior reply length creativity context tokens">Model behavior</h2>
+        <h2 class="xl-section" data-search="system prompt persona instructions">
+        <div class="xl-card">
+            <div class="xl-presets" id="sysPresets">
+                <button type="button" class="xl-chip" data-preset="You are a helpful assistant.">Default</button>
+                <button type="button" class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate.">Concise</button>
+                <button type="button" class="xl-chip" data-preset="You are a senior software engineer. Explain your reasoning and prefer working code over prose.">Engineer</button>
+                <button type="button" class="xl-chip" data-preset="You are a patient teacher. Explain every concept in simple language with examples.">Teacher</button>
+                <button type="button" class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so. Pay attention to anything the user tells you about themselves (name, preferences, context) and use it in later replies.">Personal</button>
+            </div>
+            <textarea id="sSystem" rows="5" class="xl-textarea"></textarea>
+        </div>
+
+        <!-- ============ Appearance ============ -->
+        <h2 class="xl-section" data-search="model behavior reply length creativity context tokens">
         <div class="xl-card">
 
             <div class="xl-field">
@@ -196,20 +209,7 @@
         </details>
 
         <!-- ============ System prompt ============ -->
-        <h2 class="xl-section">System prompt</h2>
-        <div class="xl-card">
-            <div class="xl-presets" id="sysPresets">
-                <button type="button" class="xl-chip" data-preset="You are a helpful assistant.">Default</button>
-                <button type="button" class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate.">Concise</button>
-                <button type="button" class="xl-chip" data-preset="You are a senior software engineer. Explain your reasoning and prefer working code over prose.">Engineer</button>
-                <button type="button" class="xl-chip" data-preset="You are a patient teacher. Explain every concept in simple language with examples.">Teacher</button>
-                <button type="button" class="xl-chip" data-preset="You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so. Pay attention to anything the user tells you about themselves (name, preferences, context) and use it in later replies.">Personal</button>
-            </div>
-            <textarea id="sSystem" rows="5" class="xl-textarea"></textarea>
-        </div>
-
-        <!-- ============ Appearance ============ -->
-        <h2 class="xl-section">Appearance</h2>
+        <h2 class="xl-section" data-search="appearance theme accent colors dark light system">
         <div class="xl-card">
             <div class="xl-row">
                 <span><i class="fa-solid fa-moon xl-row-icon"></i> Theme</span>
@@ -233,7 +233,7 @@
         </div>
 
         <!-- ============ Behavior toggles ============ -->
-        <h2 class="xl-section">Behavior</h2>
+        <h2 class="xl-section" data-search="behavior stream replies render markdown">
         <div class="xl-card">
             <div class="xl-row">
                 <span><i class="fa-solid fa-bolt xl-row-icon"></i> Stream replies</span>
@@ -246,7 +246,7 @@
         </div>
 
         <!-- ============ Local server ============ -->
-        <h2 class="xl-section">Local server</h2>
+        <h2 class="xl-section" data-search="local server api port key wifi openai">
         <div class="xl-card">
             <div class="xl-row">
                 <span><i class="fa-solid fa-server xl-row-icon"></i> Enable local API</span>
@@ -332,7 +332,7 @@
         </div>
 
         <!-- ============ Data ============ -->
-        <h2 class="xl-section">Data</h2>
+        <h2 class="xl-section" data-search="data export import backup restore">
         <div class="xl-card">
             <button id="exportData" class="xl-secondary">
                 <i class="fa-solid fa-file-export"></i> Export backup
@@ -344,7 +344,7 @@
         </div>
 
         <!-- ============ Danger zone ============ -->
-        <h2 class="xl-section">Danger zone</h2>
+        <h2 class="xl-section" data-search="danger zone clear conversations reset settings">
         <div class="xl-card">
             <button id="clearHistory" class="xl-danger">
                 <i class="fa-solid fa-trash"></i> Clear all conversations

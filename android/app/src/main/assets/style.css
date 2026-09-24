@@ -180,10 +180,13 @@ body.xl-app {
     flex-direction: column;
     opacity: 0;
     pointer-events: none;
-    transition: opacity .15s ease;
+    transition: opacity .2s ease, transform .22s cubic-bezier(.22,.61,.36,1);
+    transform: translateY(10px);
     padding-top: calc(var(--safe-top) + var(--island-h) + 6px);
+    /* reserve space for the floating tabbar */
+    padding-bottom: calc(60px + 14px + var(--safe-bot) + 8px);
 }
-.xl-view.active { opacity: 1; pointer-events: auto; }
+.xl-view.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
 
 .xl-scroll {
     flex: 1;
@@ -194,6 +197,7 @@ body.xl-app {
     max-width: var(--max-w);
     margin: 0 auto;
     width: 100%;
+    padding-bottom: 24px;
 }
 .xl-gap { height: 24px; }
 
@@ -270,6 +274,7 @@ body.xl-app {
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
     width: 100%;
+    padding-bottom: 24px;
 }
 
 .xl-msg {
@@ -568,40 +573,55 @@ body.xl-app {
    Tab bar
    ============================================================ */
 
+/* Floating pill nav */
 .xl-tabbar {
-    flex-shrink: 0;
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(14px + var(--safe-bot));
+    width: min(calc(100% - 28px), 440px);
+    height: 60px;
     display: flex;
     align-items: stretch;
     justify-content: space-around;
-    height: calc(var(--tabbar-h) + var(--safe-bot));
-    background: var(--bg-2);
-    border-top: .5px solid var(--border);
-    padding-bottom: var(--safe-bot);
+    gap: 4px;
+    background: color-mix(in srgb, var(--bg-2) 88%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(16px) saturate(180%);
+    border: .5px solid var(--border-2);
+    border-radius: 22px;
+    box-shadow:
+        0 10px 32px rgba(0,0,0,.38),
+        0 2px 8px rgba(0,0,0,.22);
+    padding: 6px;
+    z-index: 60;
+    overflow: hidden;
 }
 .xl-tab {
     flex: 1;
-    border: none; background: transparent;
+    border: none;
+    background: transparent;
     color: var(--fg-dim);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    gap: 3px; font: inherit;
-    font-size: 10px; font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 500;
     cursor: pointer;
-    transition: color .15s;
+    border-radius: 16px;
     position: relative;
+    transition: color .22s ease, background-color .22s ease, transform .18s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 .xl-tab i { font-size: 19px; }
-.xl-tab.active { color: var(--accent); }
-.xl-tab.active::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 50%;
-    transform: translateX(-50%);
-    width: 24px; height: 2px;
-    background: var(--accent);
-    border-radius: 0 0 2px 2px;
+.xl-tab.active {
+    color: var(--accent);
+    background-color: color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.xl-tab:active { color: var(--fg); }
+.xl-tab:active { transform: scale(.94); }
 
 /* ============================================================
    Models

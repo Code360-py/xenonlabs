@@ -23,6 +23,7 @@ import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
+import android.content.res.Configuration;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
@@ -1153,5 +1154,33 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String getServerStatus()                       { return MainActivity.this.getServerStatus(); }
         @JavascriptInterface public void    exportBackup(String json, String name) { MainActivity.this.exportBackup(json, name); }
         @JavascriptInterface public void    importBackup()                         { MainActivity.this.importBackup(); }
+    }
+
+
+    /* ---------- system theme → WebView ---------- */
+    private boolean isSystemDark() {
+        int mode = getResources().getConfiguration().uiMode
+                 & Configuration.UI_MODE_NIGHT_MASK;
+        return mode == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private void pushSystemTheme() {
+        if (web == null) return;
+        final boolean dark = isSystemDark();
+        web.post(() -> web.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('xenon:system-theme',{detail:{dark:"
+            + dark + "}}));", null));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        pushSystemTheme();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        pushSystemTheme();
     }
 }

@@ -1265,36 +1265,68 @@
         theme: 'dark', accent: 'blue', streaming: true, markdown: true,
         system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
     };
-    function applyTheme(t) {
-        const pref = (t === 'light' || t === 'dark') ? t : 'system';
-        if (pref === 'system') {
-            delete document.body.dataset.theme;
-        } else {
-            document.body.dataset.theme = pref;
-        }
-        document.body.dataset.themePref = pref;
-        document.documentElement.setAttribute('data-theme-ready', '1');
+    /* Source of truth for system theme. Updated by:
+       (a) matchMedia change — if WebView reports it
+       (b) native 'xenon:system-theme' event from MainActivity
+    */
+    let _sysDark = window.matchMedia
+        && window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-        /* Bootstrap parity (unused classes but harmless) */
-        const resolvedDark = pref === 'dark' ||
-            (pref === 'system' &&
-             window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.setAttribute(
-            'data-bs-theme', resolvedDark ? 'dark' : 'light');
-
-        /* Native status bar tint */
-        const meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.setAttribute('content', resolvedDark ? '#08090c' : '#ffffff');
-    }
-
-    /* System flips while on System → CSS does the colors, JS just re-syncs meta */
-    try {
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    window.addEventListener('xenon:system-theme', e => {
+        const next = !!(e && e.detail && e.detail.dark);
+        if (next !== _sysDark) {
+            _sysDark = next;
             if ((document.body.dataset.themePref || 'system') === 'system') {
                 applyTheme('system');
             }
-        });
+        }
+    });
+
+    try {
+        window.matchMedia('(prefers-color-scheme: dark)')
+            .addEventListener('change', ev => {
+                _sysDark = !!ev.matches;
+                if ((document.body.dataset.themePref || 'system') === 'system') {
+                    applyTheme('system');
+                }
+            });
     } catch (_) {}
+
+    /* Re-check when app returns to foreground (Android may have missed the flip) */
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        const cur = window.matchMedia
+            && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (cur !== _sysDark) {
+            _sysDark = cur;
+            if ((document.body.dataset.themePref || 'system') === 'system') {
+                applyTheme('system');
+            }
+        }
+    });
+
+    function applyTheme(t) {
+        const pref = (t === 'light' || t === 'dark') ? t : 'system';
+        document.body.dataset.themePref = pref;
+
+        if (pref === 'light' || pref === 'dark') {
+            document.body.dataset.theme = pref;
+            delete document.body.dataset.system;
+        } else {
+            /* System mode — CSS keys off data-theme-pref + data-system */
+            delete document.body.dataset.theme;
+            document.body.dataset.system = _sysDark ? 'dark' : 'light';
+        }
+
+        document.documentElement.setAttribute('data-theme-ready', '1');
+
+        const resolvedDark = pref === 'dark' || (pref === 'system' && _sysDark);
+        document.documentElement.setAttribute(
+            'data-bs-theme', resolvedDark ? 'dark' : 'light');
+
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', resolvedDark ? '#08090c' : '#ffffff');
+    }
 
     function applyAccent(a) { document.body.dataset.accent = a || 'blue'; }
 
@@ -1759,7 +1791,7 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-    const APP_VERSION  = '3.4.1';
+    const APP_VERSION  = '3.4.2';
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 

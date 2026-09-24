@@ -27,10 +27,27 @@
 }
 
 /* ============================================================
-   System mode (no data-theme on body) — OS decides
+   System mode — JS sets data-system=dark|light on <body>
+   (fallback media query kept for pre-JS paint)
    ============================================================ */
+body[data-theme-pref="system"][data-system="dark"] {
+    --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
+    --bg-4:    #20232a;  --bg-user: #1a1d24;
+    --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;
+    --border:   rgba(255,255,255,.07);
+    --border-2: rgba(255,255,255,.12);
+}
+body[data-theme-pref="system"][data-system="light"] {
+    --bg:      #ffffff;  --bg-2:    #f5f6f8;  --bg-3: #eceef2;
+    --bg-4:    #e2e5eb;  --bg-user: #eef1f6;
+    --fg:      #0e1116;  --fg-dim:  #5a6675;  --fg-faint: #9aa4b2;
+    --border:   rgba(0,0,0,.08);
+    --border-2: rgba(0,0,0,.14);
+}
+
+/* Pre-JS paint (before app.js runs) — mirror the media query so no flash */
 @media (prefers-color-scheme: dark) {
-    body:not([data-theme]) {
+    body:not([data-theme-ready]) {
         --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
         --bg-4:    #20232a;  --bg-user: #1a1d24;
         --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;

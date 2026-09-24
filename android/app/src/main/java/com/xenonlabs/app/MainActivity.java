@@ -950,14 +950,21 @@ public class MainActivity extends AppCompatActivity {
     public String getServerStatus() {
         try {
             JSONObject o = new JSONObject();
+            int port = ServerService.getPort(this);
             o.put("enabled", ServerService.isEnabled(this));
-            o.put("port", ServerService.getPort(this));
+            o.put("port", port);
+
+            /* Loopback URL — only reachable from this device. */
+            o.put("localUrl", "http://127.0.0.1:" + port + "/v1");
+
+            /* LAN URL — reachable from other devices on the same network. */
             String ip = com.xenonlabs.app.LocalServer.localIpv4();
-            o.put("ip", ip != null ? ip : "");
-            if (ip != null) {
-                o.put("url", "http://" + ip + ":" + ServerService.getPort(this) + "/v1");
+            if (ip != null && !ip.isEmpty()) {
+                o.put("ip", ip);
+                o.put("lanUrl", "http://" + ip + ":" + port + "/v1");
             } else {
-                o.put("url", "");
+                o.put("ip", "");
+                o.put("lanUrl", "");
             }
             return o.toString();
         } catch (Exception e) {

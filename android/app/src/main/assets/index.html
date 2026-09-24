@@ -272,10 +272,36 @@
                 </div>
 
                 <div id="serverStatus" class="xl-server-status">Stopped</div>
-                <button type="button" id="serverUrl"
-                        class="xl-secondary" style="margin-top:8px;display:none">
-                    <i class="fa-solid fa-link"></i> <span id="serverUrlText"></span>
-                </button>
+
+                <div id="serverUrls" hidden>
+                    <div class="xl-field" style="margin-top:14px">
+                        <div class="xl-field-head">
+                            <label>Local (this phone)</label>
+                        </div>
+                        <div class="xl-copy-row">
+                            <input type="text" id="serverLocalUrl" readonly class="xl-url-input">
+                            <button type="button" class="xl-copy-btn" data-copy="serverLocalUrl">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="xl-field-help">Only reachable from this device.</div>
+                    </div>
+
+                    <div class="xl-field" id="serverLanWrap">
+                        <div class="xl-field-head">
+                            <label>Network (Wi-Fi / LAN)</label>
+                        </div>
+                        <div class="xl-copy-row">
+                            <input type="text" id="serverLanUrl" readonly class="xl-url-input">
+                            <button type="button" class="xl-copy-btn" data-copy="serverLanUrl">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="xl-field-help" id="serverLanHelp">
+                            Paste this into your client (Chatbox, Open WebUI, curl, …).
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

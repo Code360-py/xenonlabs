@@ -1400,3 +1400,37 @@ body[data-accent="graphite"] { --accent: #6b7280; --accent-2: #4b5563; }
     background: rgba(239,68,68,.08);
 }
 .xl-server-status.error::before { background: var(--red); }
+
+/* ============================================================
+   Server URL copy rows
+   ============================================================ */
+
+.xl-copy-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+.xl-url-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-3);
+    border: .5px solid var(--border);
+    color: var(--fg-dim);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font: 12px 'SF Mono', Menlo, Consolas, monospace;
+    outline: none;
+}
+.xl-url-input:focus { border-color: rgba(77,107,254,.5); }
+.xl-copy-btn {
+    flex-shrink: 0;
+    border: .5px solid var(--border-2);
+    background: var(--bg-3);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 0 12px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.xl-copy-btn:active { background: var(--bg-4); }

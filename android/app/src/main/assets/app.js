@@ -1183,15 +1183,18 @@
         const toggle = document.getElementById('serverToggle');
         const cfg    = document.getElementById('serverConfig');
         const status = document.getElementById('serverStatus');
-        const urlBtn = document.getElementById('serverUrl');
-        const urlTxt = document.getElementById('serverUrlText');
         const keyEl  = document.getElementById('serverKey');
         const portEl = document.getElementById('serverPort');
+        const urlsBox = document.getElementById('serverUrls');
+        const localEl = document.getElementById('serverLocalUrl');
+        const lanEl   = document.getElementById('serverLanUrl');
+        const lanWrap = document.getElementById('serverLanWrap');
+        const lanHelp = document.getElementById('serverLanHelp');
         if (!toggle) return;
 
         let st;
         try { st = JSON.parse(window.Xenon.getServerStatus()); }
-        catch (_) { st = { enabled: false, port: 8080, ip: '', url: '' }; }
+        catch (_) { st = { enabled: false, port: 8080, localUrl: '', lanUrl: '' }; }
 
         toggle.checked = !!st.enabled;
         if (portEl && document.activeElement !== portEl) portEl.value = st.port;
@@ -1201,23 +1204,24 @@
         if (status) {
             status.classList.remove('running', 'error');
             if (st.enabled) {
-                if (st.url) {
-                    status.classList.add('running');
-                    status.textContent = 'Running · ' + st.url;
-                } else {
-                    status.classList.add('error');
-                    status.textContent = 'Running · no Wi-Fi IPv4 found';
-                }
+                status.classList.add('running');
+                status.textContent = 'Running';
             } else {
                 status.textContent = 'Stopped';
             }
         }
-        if (urlBtn && urlTxt) {
-            if (st.enabled && st.url) {
-                urlBtn.style.display = '';
-                urlTxt.textContent = st.url;
+
+        if (urlsBox) urlsBox.hidden = !st.enabled;
+        if (localEl) localEl.value = st.localUrl || '';
+        if (lanEl)   lanEl.value   = st.lanUrl   || '';
+
+        if (lanWrap && lanHelp) {
+            if (st.enabled && (!st.lanUrl || st.lanUrl === '')) {
+                lanWrap.style.opacity = '0.5';
+                lanHelp.textContent = 'No LAN address found — server only reachable from this device.';
             } else {
-                urlBtn.style.display = 'none';
+                lanWrap.style.opacity = '1';
+                lanHelp.textContent = 'Paste this into your client (Chatbox, Open WebUI, curl, …).';
             }
         }
     }
@@ -1284,15 +1288,27 @@
         });
     }
 
-    const serverUrlBtn = document.getElementById('serverUrl');
-    if (serverUrlBtn) {
-        serverUrlBtn.addEventListener('click', () => {
-            const el = document.getElementById('serverUrlText');
-            if (!el) return;
-            try { navigator.clipboard.writeText(el.textContent); toast('URL copied'); }
-            catch (_) { toast(el.textContent); }
+    /* Generic copy buttons for read-only inputs. */
+    document.querySelectorAll('.xl-copy-btn[data-copy]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-copy');
+            const el = document.getElementById(targetId);
+            if (!el || !el.value) return;
+            const label = (targetId === 'serverLocalUrl') ? 'Local URL'
+                        : (targetId === 'serverLanUrl')   ? 'Network URL'
+                        : 'Value';
+            try {
+                navigator.clipboard.writeText(el.value);
+                toast(label + ' copied');
+            } catch (_) {
+                el.removeAttribute('readonly');
+                el.select();
+                try { document.execCommand('copy'); toast(label + ' copied'); }
+                catch (_) { toast('Copy failed'); }
+                el.setAttribute('readonly', 'readonly');
+            }
         });
-    }
+    });
 
     /* Refresh server status when settings tab opens */
     document.querySelectorAll('.xl-tab').forEach(t => {

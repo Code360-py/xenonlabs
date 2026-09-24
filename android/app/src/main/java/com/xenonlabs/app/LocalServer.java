@@ -6,11 +6,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -33,41 +31,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * llama.cpp context is single-threaded), and streams responses using
  * the Server-Sent Events format that OpenAI clients expect.
  *
- * Only the subset of the API that makes sense for a local LLM is
- * implemented:
- *
- *   GET  /health
- *   GET  /v1/models
- *   POST /v1/chat/completions
- *
- * The server delegates generation to a callback. It does not know
- * about llama.cpp or the JNI bridge.
+ * Endpoints:
+ *   GET  /health                 (public, no auth)
+ *   GET  /v1/models              (auth)
+ *   POST /v1/chat/completions    (auth)
  */
 public class LocalServer {
 
     public static final String TAG = "XenonServer";
 
-    /** Callback the server uses to talk to the model. */
     public interface Generator {
-        /**
-         * Generate a reply. Called from a server thread.
-         *
-         * @param prompt     fully formatted prompt text
-         * @param maxTokens  upper bound on tokens to generate
-         * @param temperature  sampling temperature
-         * @param topP       nucleus sampling threshold
-         * @param topK       top-k sampling
-         * @param onToken    called once per decoded token; return false to abort
-         * @return true on success, false on failure
-         */
         boolean generate(String prompt,
                          int maxTokens,
                          float temperature,
                          float topP,
                          int topK,
                          TokenSink onToken);
-
-        /** Model name that /v1/models should report. */
         String modelName();
     }
 
@@ -93,7 +72,6 @@ public class LocalServer {
     public boolean isRunning() { return running.get(); }
     public int getPort() { return port; }
 
-    /** Start listening. Returns true if the socket bound successfully. */
     public boolean start() {
         if (running.get()) return true;
         try {
@@ -104,7 +82,6 @@ public class LocalServer {
             Log.e(TAG, "bind failed on port " + port, e);
             return false;
         }
-
         acceptThread = new Thread(this::acceptLoop, "xenon-http-accept");
         acceptThread.setDaemon(true);
         acceptThread.start();
@@ -124,7 +101,6 @@ public class LocalServer {
         }
     }
 
-    /** Returns the phone's LAN IPv4 address, or null if not on Wi-Fi. */
     public static String localIpv4() {
         try {
             Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
@@ -162,15 +138,19 @@ public class LocalServer {
 
     private void handleClient(Socket sock) {
         try {
-            sock.setSoTimeout(120_000);
+            sock.setSoTimeout(180_000);
             InputStream in = sock.getInputStream();
             OutputStream out = new BufferedOutputStream(sock.getOutputStream());
 
             Request req = readRequest(in);
             if (req == null) { close(sock); return; }
 
-            /* --- auth --- */
-            if (apiKey != null && !apiKey.isEmpty()) {
+            /* --- route dispatch --- */
+            /* /health is public; everything under /v1/* needs the key. */
+            String path = req.path;
+            boolean isPublic = req.method.equals("GET") && path.equals("/health");
+
+            if (!isPublic && apiKey != null && !apiKey.isEmpty()) {
                 String auth = req.headers.get("authorization");
                 if (auth == null || !auth.equalsIgnoreCase("Bearer " + apiKey)) {
                     sendError(out, 401, "invalid api key");
@@ -179,9 +159,7 @@ public class LocalServer {
                 }
             }
 
-            /* --- route --- */
-            String path = req.path;
-            if (req.method.equals("GET") && path.equals("/health")) {
+            if (isPublic) {
                 sendJson(out, 200, "{\"status\":\"ok\"}");
             } else if (req.method.equals("GET") && path.equals("/v1/models")) {
                 handleModels(out);
@@ -215,9 +193,8 @@ public class LocalServer {
     }
 
     private Request readRequest(InputStream in) throws IOException {
-        /* Read until we see \r\n\r\n (end of headers) */
         ByteArrayOutputStream headerBytes = new ByteArrayOutputStream();
-        int state = 0;   /* counts consecutive \r,\n,\r,\n */
+        int state = 0;
         int b;
         while ((b = in.read()) != -1) {
             headerBytes.write(b);
@@ -275,28 +252,24 @@ public class LocalServer {
     /* ============================================================ */
 
     private void handleModels(OutputStream out) throws IOException {
-        JSONObject model = new JSONObject();
         try {
+            JSONObject model = new JSONObject();
             model.put("id", generator.modelName());
             model.put("object", "model");
             model.put("created", System.currentTimeMillis() / 1000L);
             model.put("owned_by", "xenonlabs");
-        } catch (Exception e) {
-            sendError(out, 500, "json: " + e.getMessage());
-            return;
-        }
 
-        JSONObject root = new JSONObject();
-        try {
-            root.put("object", "list");
             JSONArray arr = new JSONArray();
             arr.put(model);
+
+            JSONObject root = new JSONObject();
+            root.put("object", "list");
             root.put("data", arr);
+
+            sendJson(out, 200, root.toString());
         } catch (Exception e) {
             sendError(out, 500, "json: " + e.getMessage());
-            return;
         }
-        sendJson(out, 200, root.toString());
     }
 
     private void handleChat(Request req, OutputStream out) throws IOException {
@@ -308,7 +281,6 @@ public class LocalServer {
             return;
         }
 
-        /* --- parse messages --- */
         JSONArray messages = body.optJSONArray("messages");
         if (messages == null || messages.length() == 0) {
             sendError(out, 400, "messages[] required");
@@ -336,7 +308,6 @@ public class LocalServer {
         }
         prompt.append(dialog);
 
-        /* --- parse params --- */
         int maxTokens = body.optInt("max_tokens", 256);
         if (maxTokens <= 0 || maxTokens > 4096) maxTokens = 256;
         double temp = body.optDouble("temperature", 0.7);

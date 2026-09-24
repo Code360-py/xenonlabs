@@ -354,8 +354,8 @@ public class LocalServer {
                     piece -> { acc.append(piece); return true; });
             if (!ok) { sendError(out, 500, "generation failed"); return; }
 
-            JSONObject msg = new JSONObject();
             try {
+                JSONObject msg = new JSONObject();
                 msg.put("role", "assistant");
                 msg.put("content", acc.toString());
 
@@ -373,11 +373,11 @@ public class LocalServer {
                 root.put("created", System.currentTimeMillis() / 1000L);
                 root.put("model", modelName);
                 root.put("choices", choices);
+
+                sendJson(out, 200, root.toString());
             } catch (Exception e) {
                 sendError(out, 500, "json: " + e.getMessage());
-                return;
             }
-            sendJson(out, 200, root.toString());
             return;
         }
 
@@ -393,7 +393,6 @@ public class LocalServer {
         out.flush();
 
         boolean[] first = { true };
-        boolean[] sentDone = { false };
 
         boolean ok = generator.generate(prompt.toString(), maxTokens,
                 (float) temp, (float) topP, topK,
@@ -418,7 +417,6 @@ public class LocalServer {
                         chunk.put("choices", choices);
 
                         if (first[0]) {
-                            /* role chunk first */
                             JSONObject roleDelta = new JSONObject();
                             roleDelta.put("role", "assistant");
                             JSONObject roleChoice = new JSONObject();

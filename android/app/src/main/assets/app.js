@@ -1265,7 +1265,37 @@
         theme: 'dark', accent: 'blue', streaming: true, markdown: true,
         system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
     };
-    function applyTheme(t) { document.body.dataset.theme = t || 'dark'; }
+    function applyTheme(t) {
+        const pref = (t === 'light' || t === 'dark') ? t : 'system';
+        if (pref === 'system') {
+            delete document.body.dataset.theme;
+        } else {
+            document.body.dataset.theme = pref;
+        }
+        document.body.dataset.themePref = pref;
+        document.documentElement.setAttribute('data-theme-ready', '1');
+
+        /* Bootstrap parity (unused classes but harmless) */
+        const resolvedDark = pref === 'dark' ||
+            (pref === 'system' &&
+             window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute(
+            'data-bs-theme', resolvedDark ? 'dark' : 'light');
+
+        /* Native status bar tint */
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', resolvedDark ? '#08090c' : '#ffffff');
+    }
+
+    /* System flips while on System → CSS does the colors, JS just re-syncs meta */
+    try {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if ((document.body.dataset.themePref || 'system') === 'system') {
+                applyTheme('system');
+            }
+        });
+    } catch (_) {}
+
     function applyAccent(a) { document.body.dataset.accent = a || 'blue'; }
 
     function loadSettings() {
@@ -1303,7 +1333,7 @@
 
         applyTheme(local.theme);
         applyAccent(local.accent);
-        $$a('#themeSegment button').forEach(b => b.classList.toggle('active', b.dataset.theme === local.theme));
+        $$a('#themeSegment button').forEach(b => b.classList.toggle('active', b.dataset.theme === (local.theme || 'system')));
         $$a('#accentSwatches button').forEach(b => b.classList.toggle('active', b.dataset.accent === local.accent));
 
         bindRange('sMax', 'oMax');
@@ -1319,8 +1349,10 @@
     $$a('#themeSegment button').forEach(b => b.addEventListener('click', () => {
         $$a('#themeSegment button').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
-        applyTheme(b.dataset.theme);
-        store.setItem('xenon.theme', b.dataset.theme);
+        const pref = b.dataset.theme === 'light' || b.dataset.theme === 'dark'
+            ? b.dataset.theme : 'system';
+        applyTheme(pref);
+        store.setItem('xenon.theme', pref);
     }));
     $$a('#accentSwatches button').forEach(b => b.addEventListener('click', () => {
         $$a('#accentSwatches button').forEach(x => x.classList.remove('active'));
@@ -1654,7 +1686,7 @@
                 if (s.threads)       store.setItem('xenon.threads', s.threads);
                 if (s.ctx)           store.setItem('xenon.ctx', s.ctx);
                 if (s.seed != null)  store.setItem('xenon.seed', s.seed);
-                if (s.theme)         store.setItem('xenon.theme', s.theme);
+                if (s.theme)         store.setItem('xenon.theme', (s.theme === 'light' || s.theme === 'dark') ? s.theme : 'system');
                 if (s.accent)        store.setItem('xenon.accent', s.accent);
                 if (s.markdown != null)  store.setItem('xenon.md', s.markdown ? '1' : '0');
                 if (s.streaming != null) store.setItem('xenon.streaming', s.streaming ? '1' : '0');
@@ -1727,7 +1759,7 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-    const APP_VERSION  = '3.4.0';
+    const APP_VERSION  = '3.5.2';
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 

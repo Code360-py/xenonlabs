@@ -3,20 +3,21 @@
    ============================================================ */
 
 :root {
-    --bg:         #0e1116;
-    --bg-2:       #151a22;
-    --bg-3:       #1c222c;
-    --bg-4:       #262d38;
-    --bg-user:    #1e2430;
-    --fg:         #e8ecf1;
-    --fg-dim:     #8b96a5;
-    --fg-faint:   #4d5a6b;
+    /* Light palette — base, used by System mode in light and by explicit Light */
+    --bg:         #ffffff;
+    --bg-2:       #f5f6f8;
+    --bg-3:       #eceef2;
+    --bg-4:       #e2e5eb;
+    --bg-user:    #eef1f6;
+    --fg:         #0e1116;
+    --fg-dim:     #5a6675;
+    --fg-faint:   #9aa4b2;
     --accent:     #4d6bfe;
     --accent-2:   #3b57d6;
     --green:      #22c55e;
     --red:        #ef4444;
-    --border:     rgba(255,255,255,.07);
-    --border-2:   rgba(255,255,255,.12);
+    --border:     rgba(0,0,0,.08);
+    --border-2:   rgba(0,0,0,.14);
     --island-h:   34px;
     --header-h:   52px;
     --tabbar-h:   64px;
@@ -25,12 +26,42 @@
     --max-w:      780px;
 }
 
-body[data-theme="darker"] {
-    --bg:    #08090c; --bg-2: #0f1015; --bg-3: #16181e; --bg-4: #20232a; --bg-user: #1a1d24;
+/* ============================================================
+   System mode (no data-theme on body) — OS decides
+   ============================================================ */
+@media (prefers-color-scheme: dark) {
+    body:not([data-theme]) {
+        --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
+        --bg-4:    #20232a;  --bg-user: #1a1d24;
+        --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;
+        --border:   rgba(255,255,255,.07);
+        --border-2: rgba(255,255,255,.12);
+    }
 }
-body[data-theme="blue"] {
-    --bg:    #0a0f1a; --bg-2: #111826; --bg-3: #1a2234; --bg-4: #252e44; --bg-user: #161d2b;
+
+/* ============================================================
+   Explicit Dark (was "Darker" palette — deepest black)
+   ============================================================ */
+body[data-theme="dark"] {
+    --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
+    --bg-4:    #20232a;  --bg-user: #1a1d24;
+    --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;
+    --border:   rgba(255,255,255,.07);
+    --border-2: rgba(255,255,255,.12);
 }
+
+/* ============================================================
+   Explicit Light (black text on white)
+   ============================================================ */
+body[data-theme="light"] {
+    --bg:      #ffffff;  --bg-2:    #f5f6f8;  --bg-3: #eceef2;
+    --bg-4:    #e2e5eb;  --bg-user: #eef1f6;
+    --fg:      #0e1116;  --fg-dim:  #5a6675;  --fg-faint: #9aa4b2;
+    --border:   rgba(0,0,0,.08);
+    --border-2: rgba(0,0,0,.14);
+}
+
+html { color-scheme: light dark; }
 
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 

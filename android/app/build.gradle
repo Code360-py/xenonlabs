@@ -11,8 +11,13 @@ android {
         applicationId "com.xenonlabs.app"
         minSdk 24
         targetSdk 34
-        versionCode 15
-        versionName "3.4.3"
+<<<<<<< HEAD
+        versionCode 26
+        versionName "3.4.13"
+=======
+        versionCode 26
+        versionName "3.4.13"
+>>>>>>> c35c2e1 (fix(server): poll status until toggle state matches, refresh on boot (v3.4.6))
 
         ndk {
             abiFilters 'arm64-v8a'

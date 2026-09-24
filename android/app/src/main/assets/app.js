@@ -1572,14 +1572,34 @@
     const serverToggle = document.getElementById('serverToggle');
     if (serverToggle) {
         serverToggle.addEventListener('change', () => {
-            try {
-                if (serverToggle.checked) window.Xenon.startLocalServer();
-                else                      window.Xenon.stopLocalServer();
-            } catch (e) {
-                toast('Server error: ' + e.message, 'fa-solid fa-triangle-exclamation');
+        const wantOn = serverToggle.checked;
+        try {
+            if (wantOn) window.Xenon.startLocalServer();
+            else        window.Xenon.stopLocalServer();
+        } catch (e) {
+            toast('Server error: ' + e.message, 'fa-solid fa-triangle-exclamation');
+        }
+
+        /* Immediate feedback */
+        const status = document.getElementById('serverStatus');
+        const cfg    = document.getElementById('serverConfig');
+        if (status) { status.textContent = wantOn ? 'Starting…' : 'Stopping…'; }
+        if (cfg && wantOn) cfg.hidden = false;
+
+        /* Poll getServerStatus() until it matches, or give up after 8s */
+        let tries = 0;
+        const poll = setInterval(() => {
+            tries++;
+            let st;
+            try { st = JSON.parse(window.Xenon.getServerStatus()); }
+            catch (_) { st = { enabled: false }; }
+
+            if (!!st.enabled === wantOn || tries >= 20) {
+                clearInterval(poll);
+                refreshServerUi();
             }
-            setTimeout(refreshServerUi, 300);
-        });
+        }, 400);
+    });
     }
 
     const serverPortEl = document.getElementById('serverPort');
@@ -1791,7 +1811,11 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-    const APP_VERSION  = '3.4.3';
+<<<<<<< HEAD
+    const APP_VERSION  = '3.4.13';
+=======
+    const APP_VERSION  = '3.4.13';
+>>>>>>> c35c2e1 (fix(server): poll status until toggle state matches, refresh on boot (v3.4.6))
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 
@@ -1908,6 +1932,10 @@
     };
 
     /* ---------- boot ---------- */
+    /* Server might be already running when WebView loads.
+       Native may not be ready at first tick — retry a few times. */
+    [300, 800, 1500, 3000].forEach(ms => setTimeout(refreshServerUi, ms));
+
     (async function boot() {
         try { loadSettings(); } catch (e) { showError('settings: ' + e); }
         try { await loadModels(); } catch (e) { showError('models: ' + e); }

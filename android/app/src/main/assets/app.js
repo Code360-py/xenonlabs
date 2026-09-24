@@ -1266,21 +1266,52 @@
         system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
     };
     const _themeMq = window.matchMedia('(prefers-color-scheme: dark)');
+    let _systemDark = _themeMq.matches;
     let _themePref = 'auto';
 
+    /* Java pushes the real system theme via this event (WebView can't be trusted) */
+    window.addEventListener('xenon:system-theme', e => {
+        const next = !!(e && e.detail && e.detail.dark);
+        if (next !== _systemDark) {
+            _systemDark = next;
+            if (_themePref === 'auto') applyTheme('auto');
+        }
+    });
+
+    /* Fallback: media query change (works on some WebViews) */
+    _themeMq.addEventListener('change', () => {
+        _systemDark = _themeMq.matches;
+        if (_themePref === 'auto') applyTheme('auto');
+    });
+
+    /* Fallback: re-check on focus/visibility (Android returns from background) */
+    const _recheckTheme = () => {
+        const cur = _themeMq.matches;
+        if (cur !== _systemDark) {
+            _systemDark = cur;
+            if (_themePref === 'auto') applyTheme('auto');
+        } else if (_themePref === 'auto') {
+            /* still nudge — Java may have pushed a stale value */
+            applyTheme('auto');
+        }
+    };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) _recheckTheme(); });
+    window.addEventListener('focus', _recheckTheme);
+    setInterval(_recheckTheme, 3000);
+
     function _resolveTheme(pref) {
-        if (pref === 'auto') return _themeMq.matches ? 'dark' : 'light';
+        if (pref === 'auto') return _systemDark ? 'dark' : 'light';
         return pref;
     }
     function applyTheme(t) {
         _themePref = t || 'auto';
-        document.body.dataset.theme = _resolveTheme(_themePref);
+        const resolved = _resolveTheme(_themePref);
+        document.body.dataset.theme = resolved;
         document.body.dataset.themePref = _themePref;
         document.documentElement.setAttribute('data-theme-ready', '1');
+        /* keep Bootstrap in sync */
+        document.documentElement.setAttribute('data-bs-theme', resolved === 'light' ? 'light' : 'dark');
     }
-    _themeMq.addEventListener('change', () => {
-        if (_themePref === 'auto') applyTheme('auto');
-    });
     function applyAccent(a) { document.body.dataset.accent = a || 'blue'; }
 
     function loadSettings() {
@@ -1744,7 +1775,7 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-    const APP_VERSION  = '3.5.1';
+    const APP_VERSION  = '3.5.2';
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 

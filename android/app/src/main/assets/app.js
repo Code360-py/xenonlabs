@@ -1727,7 +1727,7 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-    const APP_VERSION  = '3.2.1';
+    const APP_VERSION  = '3.3.0';
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 

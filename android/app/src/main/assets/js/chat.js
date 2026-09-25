@@ -467,6 +467,16 @@
                 setSendButtonMode('send');
                 setIsland('ready', '', '');
                 renderChat();
+
+                /* Gemini-style voice loop: speak the reply, then auto-listen */
+                if (typeof voiceLoop !== 'undefined' && voiceLoop && acc) {
+                    setMic('speaking');
+                    try {
+                        if (!asstRow.id) asstRow.id = 'xl-speak-' + (nextTtsId++);
+                        currentSpeakingId = asstRow.id;
+                        window.Xenon.speak(acc);
+                    } catch (_) { setMic('idle'); }
+                }
             },
             onError: msg => {
                 clearThinkingInBubble(asstTextEl);
@@ -541,11 +551,7 @@
     /* ---------- voice button ---------- */
     var micBtn = document.getElementById('micBtn');
     if (micBtn) micBtn.onclick = () => {
-        try {
-            if (voiceActive) window.Xenon.stopVoiceInput();
-            else             window.Xenon.startVoiceInput();
-        } catch (e) {
-            toast('Voice not available', 'fa-solid fa-triangle-exclamation');
-        }
+        if (voiceLoop) { stopVoiceLoop(); return; }
+        startVoiceLoop();
     };
 

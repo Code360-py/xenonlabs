@@ -145,9 +145,21 @@
                 btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
             }
         }
+        if (state === 'done' && voiceLoop) {
+            /* reply finished speaking — restart listening */
+            currentSpeakingId = null;
+            setTimeout(() => { if (voiceLoop) startVoiceLoop(); }, 250);
+            return;
+        }
         if (state === 'idle' || state === 'unavailable') {
             currentSpeakingId = null;
-            if (state === 'unavailable') toast('Speech unavailable on this device', 'fa-solid fa-triangle-exclamation');
+            if (state === 'unavailable') {
+                toast('Speech unavailable on this device', 'fa-solid fa-triangle-exclamation');
+                if (typeof voiceLoop !== 'undefined' && voiceLoop) {
+                    voiceLoop = false;
+                    setMic('idle');
+                }
+            }
         }
     };
 
@@ -172,23 +184,51 @@
 
     /* ---------- voice ---------- */
     var voiceActive = false;
+    var voiceLoop = false;   /* Gemini-style continuous loop */
     function setMic(state) {
         const micBtn = document.getElementById('micBtn');
         if (!micBtn) return;
-        micBtn.classList.remove('listening', 'processing');
-        if (state === 'listening') micBtn.classList.add('listening');
+        micBtn.classList.remove('listening', 'processing', 'speaking');
+        if (state === 'listening')       micBtn.classList.add('listening');
         else if (state === 'processing') micBtn.classList.add('processing');
+        else if (state === 'speaking')   micBtn.classList.add('speaking');
+    }
+    function startVoiceLoop() {
+        voiceLoop = true;
+        setMic('listening');
+        try { window.Xenon.startVoiceInput(); }
+        catch (e) { toast('Voice not available', 'fa-solid fa-triangle-exclamation'); voiceLoop = false; setMic('idle'); }
+    }
+    function stopVoiceLoop() {
+        voiceLoop = false;
+        try { window.Xenon.stopVoiceInput(); } catch (_) {}
+        try { window.Xenon.stopSpeaking(); } catch (_) {}
+        setMic('idle');
     }
     window.__xenonVoiceState = state => {
         voiceActive = (state === 'listening');
         setMic(state);
-        if (state === 'listening') toast('Listening…', 'fa-solid fa-microphone');
+        if (state === 'listening' && !voiceLoop) toast('Listening…', 'fa-solid fa-microphone');
         if (state === 'permission') toast('Allow microphone access');
     };
     window.__xenonVoiceText = text => {
         voiceActive = false;
+        if (!text) { if (voiceLoop) setMic('idle'); return; }
+        if (voiceLoop) {
+            /* auto-send */
+            setMic('processing');
+            try {
+                if (typeof sendPrompt === 'function') {
+                    sendPrompt(text);
+                } else {
+                    const el = document.getElementById('prompt');
+                    if (el) { el.value = text; el.dispatchEvent(new Event('input')); }
+                }
+            } catch (e) { setMic('idle'); }
+            return;
+        }
+        /* one-shot: just fill the input */
         setMic('idle');
-        if (!text) return;
         const el = document.getElementById('prompt');
         if (!el) return;
         const cur = el.value.trim();
@@ -203,9 +243,16 @@
     };
     window.__xenonVoiceError = msg => {
         voiceActive = false;
+        if (voiceLoop && (msg === 'no match' || msg === 'no speech')) {
+            /* gentle retry */
+            setMic('idle');
+            setTimeout(() => { if (voiceLoop) startVoiceLoop(); }, 400);
+            return;
+        }
         setMic('idle');
         if (msg === 'no match' || msg === 'no speech') toast("Didn't catch that", 'fa-solid fa-microphone-slash');
         else if (msg && msg !== 'client error') toast('Voice: ' + msg, 'fa-solid fa-triangle-exclamation');
+        if (voiceLoop) voiceLoop = false;
     };
 
     /* ---------- island ---------- */

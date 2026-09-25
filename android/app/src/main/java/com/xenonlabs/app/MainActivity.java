@@ -643,6 +643,20 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     tts.setLanguage(Locale.getDefault());
                     tts.setSpeechRate(0.95f);
+                    tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+                        @Override public void onStart(String id) {
+                            eval("window.__xenonTtsState && window.__xenonTtsState('speaking');");
+                        }
+                        @Override public void onDone(String id) {
+                            eval("window.__xenonTtsState && window.__xenonTtsState('done');");
+                        }
+                        @Override public void onError(String id) {
+                            eval("window.__xenonTtsState && window.__xenonTtsState('idle');");
+                        }
+                        @Override public void onError(String id, int errorCode) {
+                            eval("window.__xenonTtsState && window.__xenonTtsState('idle');");
+                        }
+                    });
                     ttsReady = true;
                 } catch (Throwable t) {
                     ttsReady = false;
@@ -677,7 +691,9 @@ public class MainActivity extends AppCompatActivity {
         ui.post(() -> {
             try {
                 tts.stop();
-                tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "xenon-tts");
+                android.os.Bundle params = new android.os.Bundle();
+                params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "xenon-tts");
+                tts.speak(clean, TextToSpeech.QUEUE_FLUSH, params, "xenon-tts");
                 eval("window.__xenonTtsState && window.__xenonTtsState('speaking');");
             } catch (Throwable t) {
                 eval("window.__xenonTtsState && window.__xenonTtsState('idle');");

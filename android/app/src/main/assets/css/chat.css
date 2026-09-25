@@ -359,3 +359,27 @@
 }
 .xl-tab:active { transform: scale(.94); }
 
+
+
+/* ============================================================
+   Voice loop — mic button states
+   ============================================================ */
+.xl-mic-btn.listening {
+    background: color-mix(in srgb, var(--red) 22%, transparent);
+    color: var(--red);
+    animation: xlMicPulse 1.4s ease-in-out infinite;
+}
+.xl-mic-btn.processing {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: var(--accent);
+    animation: xlMicPulse 1.2s ease-in-out infinite;
+}
+.xl-mic-btn.speaking {
+    background: color-mix(in srgb, var(--green) 22%, transparent);
+    color: var(--green);
+    animation: xlMicPulse 1.6s ease-in-out infinite;
+}
+@keyframes xlMicPulse {
+    0%,100% { transform: scale(1);    opacity: 1; }
+    50%     { transform: scale(1.08); opacity: .75; }
+}

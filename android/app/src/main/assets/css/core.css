@@ -1,0 +1,264 @@
+/* ============================================================
+   XenonLabs — clean dark UI
+   ============================================================ */
+
+:root {
+    /* Light palette — base, used by System mode in light and by explicit Light */
+    --bg:         #ffffff;
+    --bg-2:       #f5f6f8;
+    --bg-3:       #eceef2;
+    --bg-4:       #e2e5eb;
+    --bg-user:    #eef1f6;
+    --fg:         #0e1116;
+    --fg-dim:     #5a6675;
+    --fg-faint:   #9aa4b2;
+    --accent:     #4d6bfe;
+    --accent-2:   #3b57d6;
+    --green:      #22c55e;
+    --red:        #ef4444;
+    --border:     rgba(0,0,0,.08);
+    --border-2:   rgba(0,0,0,.14);
+    --island-h:   34px;
+    --header-h:   52px;
+    --tabbar-h:   64px;
+    --safe-top:   env(safe-area-inset-top, 0px);
+    --safe-bot:   env(safe-area-inset-bottom, 0px);
+    --max-w:      780px;
+}
+
+/* ============================================================
+   System mode — JS sets data-system=dark|light on <body>
+   (fallback media query kept for pre-JS paint)
+   ============================================================ */
+body[data-theme-pref="system"][data-system="dark"] {
+    --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
+    --bg-4:    #20232a;  --bg-user: #1a1d24;
+    --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;
+    --border:   rgba(255,255,255,.07);
+    --border-2: rgba(255,255,255,.12);
+}
+body[data-theme-pref="system"][data-system="light"] {
+    --bg:      #ffffff;  --bg-2:    #f5f6f8;  --bg-3: #eceef2;
+    --bg-4:    #e2e5eb;  --bg-user: #eef1f6;
+    --fg:      #0e1116;  --fg-dim:  #5a6675;  --fg-faint: #9aa4b2;
+    --border:   rgba(0,0,0,.08);
+    --border-2: rgba(0,0,0,.14);
+}
+
+/* Pre-JS paint (before app.js runs) — mirror the media query so no flash */
+@media (prefers-color-scheme: dark) {
+    body:not([data-theme-ready]) {
+        --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
+        --bg-4:    #20232a;  --bg-user: #1a1d24;
+        --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;
+        --border:   rgba(255,255,255,.07);
+        --border-2: rgba(255,255,255,.12);
+    }
+}
+
+/* ============================================================
+   Explicit Dark (was "Darker" palette — deepest black)
+   ============================================================ */
+body[data-theme="dark"] {
+    --bg:      #08090c;  --bg-2:    #0f1015;  --bg-3: #16181e;
+    --bg-4:    #20232a;  --bg-user: #1a1d24;
+    --fg:      #e8ecf1;  --fg-dim:  #8b96a5;  --fg-faint: #4d5a6b;
+    --border:   rgba(255,255,255,.07);
+    --border-2: rgba(255,255,255,.12);
+}
+
+/* ============================================================
+   Explicit Light (black text on white)
+   ============================================================ */
+body[data-theme="light"] {
+    --bg:      #ffffff;  --bg-2:    #f5f6f8;  --bg-3: #eceef2;
+    --bg-4:    #e2e5eb;  --bg-user: #eef1f6;
+    --fg:      #0e1116;  --fg-dim:  #5a6675;  --fg-faint: #9aa4b2;
+    --border:   rgba(0,0,0,.08);
+    --border-2: rgba(0,0,0,.14);
+}
+
+html { color-scheme: light dark; }
+
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+
+html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior: none;
+    overflow: hidden;
+}
+
+body.xl-app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+}
+
+/* ============================================================
+   Dynamic Island
+   ============================================================ */
+
+.xl-island {
+    position: fixed;
+    top: calc(var(--safe-top) + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    pointer-events: none;
+}
+.xl-island-inner {
+    display: flex; align-items: center; gap: 8px;
+    height: var(--island-h);
+    min-width: 120px;
+    padding: 0 16px;
+    background: #000;
+    border-radius: 22px;
+    box-shadow: 0 0 0 .5px rgba(255,255,255,.1), 0 4px 16px rgba(0,0,0,.6);
+    transition: min-width .35s cubic-bezier(.2,.9,.3,1),
+                padding .35s cubic-bezier(.2,.9,.3,1);
+}
+.xl-island.expanded .xl-island-inner {
+    min-width: 240px; padding: 0 20px; background: #0a0a0f;
+}
+.xl-island.generating .xl-island-inner {
+    background: linear-gradient(90deg, #0a0a0f, #1a1f36, #0a0a0f);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+}
+@keyframes shimmer {
+    0%   { background-position: 0% 0; }
+    100% { background-position: 200% 0; }
+}
+.xl-island-icon {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--fg-faint); flex-shrink: 0;
+}
+.xl-island.ready      .xl-island-icon { background: var(--green); }
+.xl-island.generating .xl-island-icon {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 1.4s ease-in-out infinite;
+}
+.xl-island.error      .xl-island-icon { background: var(--red); }
+@keyframes pulse {
+    0%,100% { transform: scale(1);   opacity: 1; }
+    50%     { transform: scale(1.3); opacity: .7; }
+}
+.xl-island-text {
+    font-size: 12.5px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.xl-island-status {
+    font-size: 10.5px; color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ============================================================
+   Main / Views
+   ============================================================ */
+
+.xl-main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+}
+.xl-view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease, transform .22s cubic-bezier(.22,.61,.36,1);
+    transform: translateY(10px);
+    padding-top: calc(var(--safe-top) + var(--island-h) + 6px);
+    /* reserve space for the floating tabbar */
+    padding-bottom: calc(60px + 14px + var(--safe-bot) + 8px);
+}
+.xl-view.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+
+.xl-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 16px 32px;
+    max-width: var(--max-w);
+    margin: 0 auto;
+    width: 100%;
+    padding-bottom: 24px;
+}
+.xl-gap { height: 24px; }
+
+/* ============================================================
+   Header
+   ============================================================ */
+
+.xl-chat-header {
+    flex-shrink: 0;
+    height: var(--header-h);
+    display: grid;
+    grid-template-columns: 44px 1fr 44px;
+    align-items: center;
+    padding: 0 10px;
+    background: var(--bg);
+    border-bottom: .5px solid var(--border);
+    max-width: var(--max-w);
+    margin: 0 auto;
+    width: 100%;
+}
+.xl-header-btn {
+    width: 36px; height: 36px;
+    border: none; border-radius: 10px;
+    background: transparent;
+    color: var(--fg-dim);
+    display: grid; place-items: center;
+    cursor: pointer; font-size: 15px;
+    transition: background .15s, color .15s, transform .12s;
+}
+.xl-header-btn:active {
+    background: rgba(255,255,255,.06);
+    color: var(--fg);
+    transform: scale(.94);
+}
+.xl-header-title {
+    text-align: center;
+    font-size: 14.5px; font-weight: 600;
+    color: var(--fg);
+}
+.xl-header-spacer { width: 36px; }
+.xl-header-model {
+    display: flex; align-items: center; gap: 8px;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--fg-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.xl-header-model .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--fg-faint);
+}
+.xl-header-model.ready .dot { background: var(--green); }
+.xl-header-model.busy  .dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.xl-header-model .thinking-dots {
+    display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;
+}
+.xl-header-model .thinking-dots i {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent); display: inline-block;
+    animation: dotPulse 1.4s ease-in-out infinite;
+}
+.xl-header-model .thinking-dots i:nth-child(2) { animation-delay: .18s; }
+.xl-header-model .thinking-dots i:nth-child(3) { animation-delay: .36s; }
+

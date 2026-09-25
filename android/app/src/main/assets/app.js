@@ -1811,11 +1811,7 @@
     if (refreshBtn) refreshBtn.onclick = () => { loadModels(); toast('Refreshed'); };
 
     /* ---------- in-app update check ---------- */
-<<<<<<< HEAD
-    const APP_VERSION  = '3.4.13';
-=======
-    const APP_VERSION  = '3.4.13';
->>>>>>> c35c2e1 (fix(server): poll status until toggle state matches, refresh on boot (v3.4.6))
+    const APP_VERSION  = '3.4.5';
     const RELEASES_URL = 'https://api.github.com/repos/Code360-py/xenonlabs/releases/latest';
     const DISMISS_KEY  = 'xenon.updateDismissedFor';
 

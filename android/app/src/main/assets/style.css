@@ -1784,3 +1784,12 @@ body[data-accent="graphite"] { --accent: #6b7280; --accent-2: #4b5563; }
     0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
     50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
 }
+
+
+/* Hide the island when the sidebar is open (island is z-1000, sidebar is z-201) */
+.xl-scrim:not([hidden]) ~ .xl-island,
+.xl-scrim:not([hidden]) ~ .xl-island.expanded {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease;
+}

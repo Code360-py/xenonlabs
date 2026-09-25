@@ -39,6 +39,7 @@ struct xenon_model {
     char               *path;
     int                 n_ctx;
     int                 n_threads;
+    int                 kv_type;    /* 0=F16, 1=Q8_0, 2=Q4_0 */
     atomic_int          refcount;   /* # of live contexts */
 };
 
@@ -133,6 +134,7 @@ xenon_config_t xenon_default_config(void) {
     c.n_gpu_layers = 0;
     c.seed         = -1;
     c.verbose      = 0;
+    c.kv_type      = 0;   /* F16 */
     return c;
 }
 
@@ -204,6 +206,7 @@ xenon_status_t xenon_model_load(const xenon_config_t *cfg,
     }
     m->n_ctx     = cfg->n_ctx > 0 ? cfg->n_ctx : 2048;
     m->n_threads = cfg->n_threads > 0 ? cfg->n_threads : 4;
+    m->kv_type   = cfg->kv_type;
     atomic_store(&m->refcount, 0);
 
     *out_model = m;
@@ -236,6 +239,15 @@ static struct llama_context *create_llama_ctx(xenon_context_t *c) {
     cp.n_threads = c->n_threads;
     cp.n_batch   = (uint32_t)c->n_batch;
     cp.n_ubatch  = (uint32_t)(c->n_batch < 512 ? c->n_batch : 512);
+
+    /* KV cache element type. Requires llama.h to expose type_k/type_v
+     * (present in llama_context_params since 2023). */
+    switch (c->parent->kv_type) {
+        case 1:  cp.type_k = GGML_TYPE_Q8_0; cp.type_v = GGML_TYPE_Q8_0; break;
+        case 2:  cp.type_k = GGML_TYPE_Q4_0; cp.type_v = GGML_TYPE_Q4_0; break;
+        default: cp.type_k = GGML_TYPE_F16;  cp.type_v = GGML_TYPE_F16;  break;
+    }
+
     return llama_init_from_model(c->parent->model, cp);
 }
 

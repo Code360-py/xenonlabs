@@ -96,6 +96,12 @@ typedef struct {
     /* Non-zero enables llama.cpp log output (unless the environment
      * variable XENONLABS_VERBOSE=0 forces silence). */
     int verbose;
+
+    /* KV cache element type:
+     *   0 = F16   (default, best quality, 2 bytes/elem)
+     *   1 = Q8_0  (half RAM, near-identical quality)
+     *   2 = Q4_0  (quarter RAM, minor quality loss) */
+    int kv_type;
 } xenon_config_t;
 
 typedef struct {

@@ -208,6 +208,20 @@
                     <div class="xl-field-help">-1 means random. Fix a number for reproducible replies.</div>
                 </div>
 
+                <div class="xl-field">
+                    <div class="xl-field-head">
+                        <label>KV cache type</label>
+                    </div>
+                    <div class="xl-segment" id="kvTypeSegment">
+                        <button type="button" data-kv="0">F16</button>
+                        <button type="button" data-kv="1">Q8_0</button>
+                        <button type="button" data-kv="2">Q4_0</button>
+                    </div>
+                    <div class="xl-field-help">
+                        Lower precision uses less RAM for the KV cache. Reload the model to apply.
+                    </div>
+                </div>
+
             </div>
         </details>
 

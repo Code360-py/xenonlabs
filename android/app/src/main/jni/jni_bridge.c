@@ -12,7 +12,8 @@ static xenon_context_t *g_ctx   = NULL;
 
 JNIEXPORT jint JNICALL
 Java_com_xenonlabs_app_MainActivity_nativeInit(JNIEnv *env, jobject thiz,
-                                               jstring jmodelPath) {
+                                               jstring jmodelPath,
+                                               jint kvType) {
     (void)thiz;
     const char *path = (*env)->GetStringUTFChars(env, jmodelPath, NULL);
     if (!path) return -1;
@@ -26,6 +27,7 @@ Java_com_xenonlabs_app_MainActivity_nativeInit(JNIEnv *env, jobject thiz,
     cfg.model_path = path;
     cfg.n_ctx      = 2048;
     cfg.n_threads  = 4;
+    cfg.kv_type    = (int)kvType;
 
     xenon_status_t st = xenon_model_load(&cfg, &g_model);
     (*env)->ReleaseStringUTFChars(env, jmodelPath, path);

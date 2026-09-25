@@ -76,7 +76,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /* ---- native declarations (must match jni_bridge.c symbols) ---- */
-    private native int    nativeInit(String path);
+    private native int    nativeInit(String path, int kvType);
     private native void   nativeShutdown();
     private native void   nativeCancelGeneration();
     private native void   nativeContinueContext();
@@ -316,10 +316,15 @@ public class MainActivity extends AppCompatActivity {
     /* ============================================================ */
 
     @JavascriptInterface
+    public void setKvType(int t) {
+        AppState.setKvType(this, t);
+    }
+
     public int loadModel(String path) {
         if (!nativeLoaded) return -1;
         try {
-            return nativeInit(path);
+            int kv = AppState.kvType(this);
+            return nativeInit(path, kv);
         } catch (Throwable t) {
             Log.e(TAG, "loadModel failed", t);
             return -4;
@@ -1140,6 +1145,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void    setActiveModel(String f)                    { MainActivity.this.setActiveModel(f); }
         @JavascriptInterface public boolean deleteModel(String f)                       { return MainActivity.this.deleteModel(f); }
         @JavascriptInterface public String  getSettings()                               { return MainActivity.this.getSettings(); }
+        @JavascriptInterface public void    setKvType(int t)                        { MainActivity.this.setKvType(t); }
         @JavascriptInterface public void    saveSettings(int m, float t, float tp, int tk, String s) {
             MainActivity.this.saveSettings(m, t, tp, tk, s);
         }

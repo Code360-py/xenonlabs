@@ -12,8 +12,26 @@
         maxTokens: 256, temperature: 0.7, topP: 0.95, topK: 40,
         repeatPenalty: 1.10, threads: 4, ctx: 2048, seed: -1,
         theme: 'dark', accent: 'blue', streaming: true, markdown: true,
-        system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.'
+        system: 'You are Xenon, a helpful on-device AI assistant. Be clear, concise, and accurate. When unsure, say so.',
+        kvType: 0
     };
+
+    /* ---------- KV cache type ---------- */
+    function applyKvType(v) {
+        var t = parseInt(v, 10) || 0;
+        $$a('#kvTypeSegment button').forEach(function(b) {
+            b.classList.toggle('active', parseInt(b.dataset.kv, 10) === t);
+        });
+        store.setItem('xenon.kvType', String(t));
+        try { if (window.Xenon && window.Xenon.setKvType) window.Xenon.setKvType(t); } catch (_) {}
+    }
+    $$a('#kvTypeSegment button').forEach(function(b) {
+        b.addEventListener('click', function() {
+            applyKvType(b.dataset.kv);
+            toast('Reload model to apply', 'fa-solid fa-rotate');
+        });
+    });
+
     /* Source of truth for system theme. Updated by:
        (a) matchMedia change — if WebView reports it
        (b) native 'xenon:system-theme' event from MainActivity
@@ -115,6 +133,7 @@
         applyTheme(local.theme);
         applyAccent(local.accent);
         $$a('#themeSegment button').forEach(b => b.classList.toggle('active', b.dataset.theme === (local.theme || 'system')));
+        applyKvType(store.getItem('xenon.kvType') || '0');
         $$a('#accentSwatches button').forEach(b => b.classList.toggle('active', b.dataset.accent === local.accent));
 
         bindRange('sMax', 'oMax');

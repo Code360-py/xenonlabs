@@ -132,6 +132,7 @@ public final class AppState {
     private static final String K_TOPP      = "top_p";
     private static final String K_TOPK      = "top_k";
     private static final String K_SYSPROMPT = "system_prompt";
+    private static final String K_KVTYPE    = "kv_type";
 
     private AppState() {}
 
@@ -150,6 +151,13 @@ public final class AppState {
     public static float  temperature(Context ctx) { return prefs(ctx).getFloat(K_TEMP, 0.7f); }
     public static float  topP(Context ctx)        { return prefs(ctx).getFloat(K_TOPP, 0.95f); }
     public static int    topK(Context ctx)        { return prefs(ctx).getInt(K_TOPK, 40); }
+    public static int kvType(Context ctx) {
+        return prefs(ctx).getInt(K_KVTYPE, 0);
+    }
+    public static void setKvType(Context ctx, int t) {
+        prefs(ctx).edit().putInt(K_KVTYPE, t).apply();
+    }
+
     public static String systemPrompt(Context ctx){
         return prefs(ctx).getString(K_SYSPROMPT, "You are a helpful assistant.");
     }

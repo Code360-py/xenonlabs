@@ -1,0 +1,10 @@
+name: ios-probe
+on: workflow_dispatch
+
+jobs:
+  probe:
+    runs-on: macos-14
+    steps:
+      - run: xcodebuild -version
+      - run: xcrun --sdk iphoneos --show-sdk-version
+      - run: echo "macOS runner can build iOS ✓"

@@ -382,15 +382,38 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Thread t = new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_TOP_APP_BOOST);
+            Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
+
+            final StringBuilder chunkBuf = new StringBuilder();
+            final long[] lastFlush = { System.currentTimeMillis() };
+
             int rc = 0;
             try {
                 rc = nativeGenerateStream(prompt, maxTokens, temperature, topP, topK,
-                    piece -> deliverToken(callbackId, piece));
+                    piece -> {
+                        synchronized (chunkBuf) {
+                            chunkBuf.append(piece);
+                            long now = System.currentTimeMillis();
+                            if (now - lastFlush[0] >= 25 || piece.indexOf(10) != -1) {
+                                String chunk = chunkBuf.toString();
+                                chunkBuf.setLength(0);
+                                lastFlush[0] = now;
+                                deliverToken(callbackId, chunk);
+                            }
+                        }
+                    });
             } catch (Throwable th) {
                 Log.e(TAG, "generateStream crashed", th);
                 deliverError(callbackId, String.valueOf(th.getMessage()));
                 rc = -4;
             } finally {
+                synchronized (chunkBuf) {
+                    if (chunkBuf.length() > 0) {
+                        deliverToken(callbackId, chunkBuf.toString());
+                        chunkBuf.setLength(0);
+                    }
+                }
                 genThread = null;
             }
 

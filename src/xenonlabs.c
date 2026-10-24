@@ -478,10 +478,10 @@ static xenon_status_t xenon_run(xenon_context_t *c, const char *prompt,
             }
         }
 
-        struct llama_batch nb = make_batch(&id, 1, c->n_past);
-        if (!nb.token) { status = XENON_ERR_OOM; break; }
+        llama_token single_tok = id;
+        struct llama_batch nb = llama_batch_get_one(&single_tok, 1);
+        nb.pos[0] = c->n_past;
         int rc = llama_decode(c->ctx, nb);
-        llama_batch_free(nb);
         if (rc != 0) { status = XENON_ERR_RUNTIME; break; }
 
         c->n_past++;
